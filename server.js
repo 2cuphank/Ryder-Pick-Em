@@ -13,7 +13,10 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const SPORT_ID = 1;                 // NCAAF, per TheRundown's sport ID reference
 const DRAFTKINGS_AFFILIATE_ID = '19'; // DraftKings, per TheRundown's affiliate ID reference
 const DAYS_AHEAD = 14;              // scan the next 2 weeks for games with DK odds posted
-const REQUEST_SPACING_MS = 2500;    // global minimum gap between ANY two TheRundown requests
+// Global minimum gap between ANY two TheRundown requests. Overridable via
+// env var so it can be widened from the hosting dashboard while diagnosing
+// rate-limit issues, without needing a code change + redeploy.
+const REQUEST_SPACING_MS = Number(process.env.RUNDOWN_MIN_GAP_MS) || 2500;
 const MAX_RETRIES = 3;              // retries per request if we still get rate-limited
 const RETRY_BACKOFF_MS = 3000;      // base backoff when TheRundown doesn't send a Retry-After header
 const MAX_EVENTS_TO_GRADE_PER_REQUEST = 5; // cap per leaderboard load so it doesn't take forever
@@ -283,6 +286,7 @@ function normalizeEvent(event, dateKey) {
 // gate makes that impossible: every single request to TheRundown, from
 // anywhere in the app, waits its turn behind the last one.
 let lastRundownRequestAt = 0;
+let rundownRequestCount = 0;
 
 async function waitForRundownSlot() {
   const elapsed = Date.now() - lastRundownRequestAt;
@@ -294,18 +298,27 @@ async function waitForRundownSlot() {
 
 async function rundownGet(url, attempt = 1) {
   await waitForRundownSlot();
+  rundownRequestCount++;
+  const reqNum = rundownRequestCount;
+  console.log(`[rundown #${reqNum}] → ${url} (spacing target ${REQUEST_SPACING_MS}ms)`);
+
   const res = await fetch(url, { headers: { 'X-TheRundown-Key': RUNDOWN_KEY } });
 
-  if (res.status === 429 && attempt <= MAX_RETRIES) {
-    // Respect Retry-After if TheRundown sends one, otherwise back off a
-    // few seconds and retry this same request before giving up on it.
-    const retryAfterHeader = Number(res.headers.get('retry-after'));
-    const waitMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
-      ? retryAfterHeader * 1000
-      : RETRY_BACKOFF_MS * attempt;
-    console.warn(`Rate limited (attempt ${attempt}) — waiting ${waitMs}ms and retrying: ${url}`);
-    await sleep(waitMs);
-    return rundownGet(url, attempt + 1);
+  if (res.status === 429) {
+    const bodyText = await res.text().catch(() => '');
+    console.warn(`[rundown #${reqNum}] 429 on attempt ${attempt}: ${bodyText.slice(0, 300)}`);
+
+    if (attempt <= MAX_RETRIES) {
+      // Respect Retry-After if TheRundown sends one, otherwise back off a
+      // few seconds and retry this same request before giving up on it.
+      const retryAfterHeader = Number(res.headers.get('retry-after'));
+      const waitMs = Number.isFinite(retryAfterHeader) && retryAfterHeader > 0
+        ? retryAfterHeader * 1000
+        : RETRY_BACKOFF_MS * attempt;
+      console.warn(`[rundown #${reqNum}] retrying in ${waitMs}ms (attempt ${attempt + 1}/${MAX_RETRIES + 1})`);
+      await sleep(waitMs);
+      return rundownGet(url, attempt + 1);
+    }
   }
 
   if (!res.ok) {
@@ -724,4 +737,5 @@ app.get('/api/leaderboard', async (req, res) => {
 
 app.listen(PORT, () => {
   console.log(`Ryder Pick 'Em running at http://localhost:${PORT}`);
+  console.log(`TheRundown request spacing: ${REQUEST_SPACING_MS}ms (set RUNDOWN_MIN_GAP_MS to override)`);
 });
