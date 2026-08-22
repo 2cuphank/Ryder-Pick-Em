@@ -12,7 +12,9 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 
 const SPORT_ID = 1;                 // NCAAF, per TheRundown's sport ID reference
 const DRAFTKINGS_AFFILIATE_ID = '19'; // DraftKings, per TheRundown's affiliate ID reference
-const DAYS_AHEAD = 14;              // scan the next 2 weeks for games with DK odds posted
+// Each day scanned is a separate billed request — lower this via env var
+// if you're conserving prepaid credits. Defaults to 2 weeks out.
+const DAYS_AHEAD = Number(process.env.RUNDOWN_DAYS_AHEAD) || 14;
 // Global minimum gap between ANY two TheRundown requests. Overridable via
 // env var so it can be widened from the hosting dashboard while diagnosing
 // rate-limit issues, without needing a code change + redeploy.
@@ -123,12 +125,12 @@ function writeGradedEvents(data) {
   fs.writeFileSync(GRADED_EVENTS_FILE, JSON.stringify(data, null, 2));
 }
 
-// In-memory cache so repeated page loads don't burn through your daily
-// data-point allowance. College football lines don't need per-second
-// freshness for a browsing board — tune CACHE_TTL_MS if you want it
-// fresher or cheaper.
+// In-memory cache so repeated page loads don't burn through your prepaid
+// credit balance. College football lines don't need per-second freshness
+// for a browsing board — override via RUNDOWN_CACHE_MINUTES if you want
+// it fresher (lower) or cheaper to run (higher).
 let cache = { data: null, fetchedAt: 0 };
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_TTL_MS = (Number(process.env.RUNDOWN_CACHE_MINUTES) || 5) * 60 * 1000;
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
@@ -304,9 +306,24 @@ async function rundownGet(url, attempt = 1) {
 
   const res = await fetch(url, { headers: { 'X-TheRundown-Key': RUNDOWN_KEY } });
 
+  if (res.ok) return res.json();
+
+  const bodyText = await res.text().catch(() => '');
+
   if (res.status === 429) {
-    const bodyText = await res.text().catch(() => '');
     console.warn(`[rundown #${reqNum}] 429 on attempt ${attempt}: ${bodyText.slice(0, 300)}`);
+
+    // Not every 429 is a transient rate limit — TheRundown also returns
+    // 429 when your prepaid credit balance runs out, which retrying does
+    // nothing to fix. Fail immediately and clearly instead of burning
+    // three more requests (and more of the same exhausted balance) on
+    // retries that can't possibly succeed.
+    if (/credit|balance|insufficient/i.test(bodyText)) {
+      throw new Error(
+        `TheRundown account is out of prepaid credits: ${bodyText.slice(0, 200)}. ` +
+        `Add funds at therundown.io — retrying won't help until then.`
+      );
+    }
 
     if (attempt <= MAX_RETRIES) {
       // Respect Retry-After if TheRundown sends one, otherwise back off a
@@ -321,12 +338,7 @@ async function rundownGet(url, attempt = 1) {
     }
   }
 
-  if (!res.ok) {
-    const detail = await res.text().catch(() => '');
-    throw new Error(`TheRundown responded ${res.status} for ${url}: ${detail.slice(0, 200)}`);
-  }
-
-  return res.json();
+  throw new Error(`TheRundown responded ${res.status} for ${url}: ${bodyText.slice(0, 200)}`);
 }
 
 async function fetchDay(dateKey) {
