@@ -1,0 +1,1235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ryder Pick 'Em — College Football Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg-deep:#0B100D;
+    --bg-field:#0F1613;
+    --surface:#161F1A;
+    --surface-raised:#1D2822;
+    --line:#2A362F;
+    --gold:#F2A93B;
+    --gold-dim:#7A5C22;
+    --crimson:#C1432E;
+    --text:#F0EDE4;
+    --text-dim:#9AA39B;
+    --text-faint:#5E6862;
+    --win-green:#4C9A6A;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    background:
+      radial-gradient(ellipse 1200px 500px at 50% -10%, rgba(242,169,59,0.07), transparent 60%),
+      var(--bg-deep);
+    color:var(--text);
+    font-family:'Inter',sans-serif;
+    -webkit-font-smoothing:antialiased;
+    min-height:100vh;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:0 20px 80px;}
+
+  /* ---------- Marquee header ---------- */
+  header{
+    padding:28px 20px 18px;
+    border-bottom:1px solid var(--line);
+    position:sticky;top:0;z-index:20;
+    background:rgba(11,16,13,0.92);
+    backdrop-filter:blur(8px);
+  }
+  .header-inner{max-width:1180px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;}
+  .brand{display:flex;align-items:center;gap:12px;}
+  .brand-mark{
+    width:38px;height:38px;border-radius:6px;
+    background:linear-gradient(160deg,var(--gold),#c4801f);
+    display:flex;align-items:center;justify-content:center;
+    font-family:'Anton',sans-serif;color:#1a1206;font-size:20px;
+    flex-shrink:0;
+  }
+  h1{
+    font-family:'Anton',sans-serif;
+    font-weight:400;
+    font-size:clamp(26px,4vw,34px);
+    letter-spacing:0.5px;
+    margin:0;
+    text-transform:uppercase;
+    line-height:1;
+  }
+  .tag{font-size:11px;color:var(--text-faint);letter-spacing:1.5px;text-transform:uppercase;margin-top:4px;}
+  .header-actions{display:flex;align-items:center;gap:10px;}
+  .slip-toggle{
+    display:none;
+    align-items:center;gap:8px;
+    background:var(--surface-raised);border:1px solid var(--line);
+    color:var(--text);padding:10px 16px;border-radius:8px;
+    font-weight:600;font-size:14px;cursor:pointer;
+  }
+  .slip-count{
+    background:var(--gold);color:#1a1206;border-radius:999px;
+    min-width:20px;height:20px;font-size:12px;font-family:'IBM Plex Mono',monospace;
+    display:flex;align-items:center;justify-content:center;padding:0 5px;
+  }
+
+  /* ---------- Auth area + modal ---------- */
+  .auth-area{display:flex;align-items:center;gap:10px;}
+  .auth-btn{
+    background:transparent;border:1px solid var(--line);color:var(--text-dim);
+    padding:9px 14px;border-radius:8px;font-size:13px;font-weight:600;
+    cursor:pointer;font-family:'Inter',sans-serif;transition:all .15s ease;
+  }
+  .auth-btn:hover{border-color:var(--gold-dim);color:var(--text);}
+  .auth-btn.primary{background:var(--gold);border-color:var(--gold);color:#1a1206;}
+  .auth-btn.primary:hover{filter:brightness(1.08);}
+  .account-chip{
+    display:flex;align-items:center;gap:8px;
+    font-family:'IBM Plex Mono',monospace;font-size:12.5px;color:var(--text-dim);
+  }
+  .account-chip .avatar{
+    width:26px;height:26px;border-radius:50%;
+    background:linear-gradient(160deg,var(--gold),#c4801f);
+    color:#1a1206;font-family:'Anton',sans-serif;font-size:13px;
+    display:flex;align-items:center;justify-content:center;flex-shrink:0;
+  }
+  .account-chip .uname{color:var(--text);font-weight:600;}
+  .logout-btn{
+    background:none;border:none;color:var(--text-faint);cursor:pointer;
+    font-size:12px;text-decoration:underline;font-family:'Inter',sans-serif;
+    padding:4px;
+  }
+  .logout-btn:hover{color:var(--crimson);}
+
+  .modal-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);
+    z-index:50;align-items:center;justify-content:center;padding:20px;
+  }
+  .modal-backdrop.open{display:flex;}
+  .modal{
+    width:100%;max-width:360px;background:var(--bg-field);
+    border:1px solid var(--line);border-radius:12px;padding:22px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.5);
+  }
+  .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  .auth-tabs{display:flex;gap:6px;background:var(--surface);border-radius:8px;padding:4px;}
+  .auth-tab{
+    background:transparent;border:none;color:var(--text-dim);
+    padding:7px 14px;border-radius:6px;font-size:13px;font-weight:600;
+    cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .auth-tab.active{background:var(--gold);color:#1a1206;}
+  .modal-close{background:none;border:none;color:var(--text-dim);font-size:18px;cursor:pointer;}
+  .field-label{display:block;font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.5px;margin:12px 0 6px;}
+  .field-input{
+    width:100%;background:var(--surface);border:1px solid var(--line);
+    border-radius:7px;padding:10px 12px;color:var(--text);font-size:14px;
+    font-family:'Inter',sans-serif;
+  }
+  .field-input:focus{outline:none;border-color:var(--gold-dim);}
+  .auth-error{color:var(--crimson);font-size:12.5px;margin-top:10px;min-height:1em;}
+  .auth-submit{
+    width:100%;margin-top:14px;background:var(--gold);border:none;
+    color:#1a1206;padding:11px;border-radius:8px;font-weight:700;
+    font-size:14px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .auth-submit:hover{filter:brightness(1.06);}
+  .auth-submit:disabled{opacity:.6;cursor:default;}
+  .auth-hint{font-size:11.5px;color:var(--text-faint);margin-top:14px;line-height:1.5;text-align:center;}
+
+  /* ---------- Notice banner ---------- */
+  .notice{
+    max-width:1180px;margin:18px auto 0;padding:12px 16px;
+    background:rgba(242,169,59,0.08);border:1px solid rgba(242,169,59,0.25);
+    border-radius:8px;font-size:13px;color:var(--text-dim);line-height:1.5;
+    display:flex;gap:10px;align-items:flex-start;
+  }
+  .notice b{color:var(--gold);font-weight:600;}
+  .notice .dot{color:var(--gold);flex-shrink:0;margin-top:2px;}
+
+  /* ---------- View tabs (Board / Leaderboard) ---------- */
+  .view-tabs{display:flex;gap:8px;margin:26px 0 0;}
+  .view-tab{
+    font-family:'Anton',sans-serif;font-size:14px;letter-spacing:.5px;text-transform:uppercase;
+    background:transparent;border:1px solid var(--line);color:var(--text-dim);
+    padding:10px 18px;border-radius:8px 8px 0 0;cursor:pointer;
+  }
+  .view-tab.active{background:var(--surface);border-color:var(--line);color:var(--gold);border-bottom-color:var(--surface);}
+  .view-tab:hover:not(.active){color:var(--text);}
+
+  /* ---------- Week tabs ---------- */
+  .weeks{display:flex;gap:8px;margin:22px 0 6px;overflow-x:auto;padding-bottom:4px;}
+  .week-btn{
+    font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.5px;
+    background:transparent;border:1px solid var(--line);color:var(--text-dim);
+    padding:8px 14px;border-radius:6px;cursor:pointer;white-space:nowrap;
+    transition:all .15s ease;
+  }
+  .week-btn.active{background:var(--gold);border-color:var(--gold);color:#1a1206;font-weight:600;}
+  .week-btn:hover:not(.active){border-color:var(--gold-dim);color:var(--text);}
+
+  .board-head{
+    display:flex;justify-content:space-between;align-items:baseline;margin:26px 0 14px;
+  }
+  .board-head h2{font-family:'Anton',sans-serif;font-weight:400;font-size:20px;text-transform:uppercase;letter-spacing:0.5px;margin:0;}
+  .updated{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);}
+
+  /* ---------- Game card ---------- */
+  .game{
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-radius:10px;
+    margin-bottom:14px;
+    overflow:hidden;
+  }
+  .game-meta{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:10px 16px;border-bottom:1px solid var(--line);
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
+    letter-spacing:0.5px;
+  }
+  .game-meta .live{color:var(--crimson);font-weight:600;}
+
+  .matchup{padding:14px 16px 6px;}
+  .team-row{display:flex;align-items:center;justify-content:space-between;padding:7px 0;}
+  .team-name{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15.5px;}
+  .team-rank{color:var(--gold);font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;}
+  .team-record{color:var(--text-faint);font-size:12px;font-weight:400;font-family:'IBM Plex Mono',monospace;}
+
+  .markets{
+    display:grid;grid-template-columns:repeat(3,1fr);gap:8px;
+    padding:10px 16px 16px;
+  }
+  .market-col-label{
+    font-size:10px;color:var(--text-faint);text-transform:uppercase;
+    letter-spacing:1px;text-align:center;margin-bottom:6px;
+    display:none;
+  }
+  .odds-btn{
+    width:100%;
+    background:var(--surface-raised);
+    border:1px solid var(--line);
+    border-radius:7px;
+    padding:8px 6px;
+    color:var(--text);
+    cursor:pointer;
+    font-family:'IBM Plex Mono',monospace;
+    text-align:center;
+    transition:all .12s ease;
+    margin-bottom:6px;
+  }
+  .odds-btn:last-child{margin-bottom:0;}
+  .odds-btn .line{display:block;font-size:13px;font-weight:600;}
+  .odds-btn .price{display:block;font-size:11.5px;color:var(--text-dim);margin-top:2px;}
+  .odds-btn:hover{border-color:var(--gold-dim);}
+  .odds-btn.selected{
+    background:linear-gradient(160deg,rgba(242,169,59,0.18),rgba(242,169,59,0.08));
+    border-color:var(--gold);
+  }
+  .odds-btn.selected .line{color:var(--gold);}
+  .odds-btn.selected .price{color:var(--gold);}
+
+  /* ---------- Bet slip ---------- */
+  .slip-backdrop{
+    display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:29;
+  }
+  .slip-backdrop.open{display:block;}
+  .slip{
+    position:fixed;top:0;right:0;height:100vh;width:340px;
+    background:var(--bg-field);border-left:1px solid var(--line);
+    z-index:30;display:flex;flex-direction:column;
+    transform:translateX(0);
+    box-shadow:-20px 0 40px rgba(0,0,0,0.35);
+  }
+  .slip-head{
+    padding:20px 18px 14px;border-bottom:1px dashed var(--line);
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  .slip-head h3{font-family:'Anton',sans-serif;font-weight:400;font-size:18px;text-transform:uppercase;margin:0;letter-spacing:.5px;}
+  .slip-close{display:none;background:none;border:none;color:var(--text-dim);font-size:20px;cursor:pointer;}
+  .slip-body{flex:1;overflow-y:auto;padding:14px 18px;position:relative;}
+  .slip-body::before{
+    content:"";position:absolute;left:0;right:0;top:0;height:1px;
+  }
+  .slip-empty{color:var(--text-faint);font-size:13px;text-align:center;margin-top:40px;line-height:1.6;}
+  .slip-empty .glyph{font-size:26px;display:block;margin-bottom:10px;opacity:.5;}
+
+  .ticket{
+    background:var(--surface);border:1px solid var(--line);border-radius:8px;
+    padding:11px 12px;margin-bottom:10px;position:relative;
+  }
+  .ticket-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;}
+  .ticket-game{font-size:11px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;margin-bottom:3px;}
+  .ticket-pick{font-size:13.5px;font-weight:600;}
+  .ticket-price{font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:13px;white-space:nowrap;}
+  .ticket-remove{
+    background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:16px;
+    line-height:1;padding:2px 4px;margin-top:6px;
+  }
+  .ticket-remove:hover{color:var(--crimson);}
+
+  .ticket-row{display:flex;justify-content:space-between;align-items:center;margin-top:9px;gap:8px;}
+  .units-field{display:flex;align-items:center;gap:6px;}
+  .units-field label{font-size:10.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.5px;}
+  .units-input{
+    width:56px;background:var(--surface-raised);border:1px solid var(--line);
+    border-radius:6px;padding:5px 6px;color:var(--text);font-size:13px;
+    font-family:'IBM Plex Mono',monospace;text-align:center;
+  }
+  .units-input:disabled{opacity:.65;}
+  .units-input:focus{outline:none;border-color:var(--gold-dim);}
+
+  .pick-badge{
+    font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;font-family:'Inter',sans-serif;
+  }
+  .pick-badge.unsaved{background:rgba(154,163,155,0.12);color:var(--text-dim);}
+  .pick-badge.pending{background:rgba(242,169,59,0.14);color:var(--gold);}
+  .pick-badge.win{background:rgba(76,154,106,0.16);color:var(--win-green);}
+  .pick-badge.loss{background:rgba(193,67,46,0.16);color:var(--crimson);}
+  .pick-badge.push{background:rgba(154,163,155,0.14);color:var(--text-dim);}
+
+  .slip-foot{
+    border-top:1px dashed var(--line);padding:14px 18px 18px;
+  }
+  .slip-stat{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-dim);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
+  .save-btn{
+    width:100%;margin-top:10px;background:var(--gold);border:none;
+    color:#1a1206;padding:11px;border-radius:8px;font-weight:700;
+    font-size:13.5px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .save-btn:hover{filter:brightness(1.06);}
+  .save-btn:disabled{opacity:.5;cursor:default;filter:none;}
+  .save-status{font-size:11.5px;color:var(--text-faint);margin-top:8px;text-align:center;min-height:1em;}
+  .save-status.ok{color:var(--win-green);}
+  .clear-btn{
+    width:100%;margin-top:8px;background:transparent;border:1px solid var(--line);
+    color:var(--text-dim);padding:10px;border-radius:7px;font-size:12.5px;
+    cursor:pointer;font-weight:600;letter-spacing:.3px;
+  }
+  .clear-btn:hover{border-color:var(--crimson);color:var(--crimson);}
+
+  /* ---------- Leaderboard ---------- */
+  .lb-loading{color:var(--text-faint);font-size:13.5px;text-align:center;padding:40px 20px;line-height:1.6;}
+  .lb-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .lb-table th{
+    text-align:left;font-size:10.5px;color:var(--text-faint);text-transform:uppercase;
+    letter-spacing:.6px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;
+  }
+  .lb-table td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:14px;}
+  .lb-table tr:last-child td{border-bottom:none;}
+  .lb-table td:first-child{font-family:'IBM Plex Mono',monospace;color:var(--text-faint);width:36px;}
+  .lb-table td:nth-child(2){font-weight:600;}
+  .lb-table td:nth-child(3),.lb-table td:nth-child(4){font-family:'IBM Plex Mono',monospace;color:var(--text-dim);}
+  .lb-table td:last-child{font-family:'IBM Plex Mono',monospace;font-weight:700;text-align:right;}
+  .lb-pos{color:var(--win-green);}
+  .lb-neg{color:var(--crimson);}
+  .lb-table tr:nth-child(1) td:first-child{color:var(--gold);}
+
+  /* ---------- Saved Bets ---------- */
+  .saved-card{
+    background:var(--surface);border:1px solid var(--line);border-radius:10px;
+    padding:14px 16px;margin-bottom:10px;
+    display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap;
+  }
+  .saved-card-main{flex:1;min-width:200px;}
+  .saved-card-game{font-size:11px;color:var(--text-faint);font-family:'IBM Plex Mono',monospace;margin-bottom:4px;}
+  .saved-card-pick{font-size:15px;font-weight:600;margin-bottom:4px;}
+  .saved-card-meta{font-size:11.5px;color:var(--text-dim);font-family:'IBM Plex Mono',monospace;display:flex;gap:12px;flex-wrap:wrap;}
+  .saved-card-right{display:flex;align-items:center;gap:14px;flex-shrink:0;}
+  .saved-card-price{font-family:'IBM Plex Mono',monospace;color:var(--gold);font-size:14px;font-weight:600;}
+  .saved-delete-btn{
+    background:transparent;border:1px solid var(--line);color:var(--text-dim);
+    padding:8px 13px;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;
+    font-family:'Inter',sans-serif;white-space:nowrap;
+  }
+  .saved-delete-btn:hover{border-color:var(--crimson);color:var(--crimson);}
+  .saved-locked-note{font-size:11px;color:var(--text-faint);font-style:italic;white-space:nowrap;}
+
+  footer{
+    max-width:1180px;margin:40px auto 0;padding:18px 20px 0;
+    border-top:1px solid var(--line);
+    font-size:11px;color:var(--text-faint);line-height:1.7;
+  }
+
+  @media (max-width:900px){
+    .slip{transform:translateX(100%);transition:transform .25s ease;width:88%;max-width:360px;}
+    .slip.open{transform:translateX(0);}
+    .slip-close{display:block;}
+    .slip-toggle{display:flex;}
+  }
+  @media (min-width:901px){
+    .wrap{padding-right:360px;}
+    .slip{position:fixed;top:0;right:0;height:100vh;}
+    .slip-backdrop{display:none !important;}
+  }
+  @media (max-width:520px){
+    .markets{grid-template-columns:1fr;}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="header-inner">
+    <div class="brand">
+      <div class="brand-mark">R</div>
+      <div>
+        <h1>Ryder Pick 'Em</h1>
+        <div class="tag">College Football Odds Board</div>
+      </div>
+    </div>
+    <div class="header-actions">
+      <div class="auth-area" id="authArea"></div>
+      <button class="slip-toggle" id="slipToggle">
+        Bet Slip <span class="slip-count" id="slipCountBadge">0</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<div class="modal-backdrop" id="authBackdrop">
+  <div class="modal" id="authModal">
+    <div class="modal-head">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="tabLogin" type="button">Log in</button>
+        <button class="auth-tab" id="tabSignup" type="button">Sign up</button>
+      </div>
+      <button class="modal-close" id="authModalClose" type="button">✕</button>
+    </div>
+    <form id="authForm">
+      <label class="field-label" for="authUsername">Username</label>
+      <input class="field-input" id="authUsername" type="text" autocomplete="username" required>
+      <label class="field-label" for="authPassword">Password</label>
+      <input class="field-input" id="authPassword" type="password" autocomplete="current-password" required>
+      <div class="auth-error" id="authError"></div>
+      <button class="auth-submit" id="authSubmit" type="submit">Log in</button>
+    </form>
+    <div class="auth-hint" id="authHint">Your saved selections on this browser will carry over to your account.</div>
+  </div>
+</div>
+
+<div class="notice" id="noticeBanner">
+  <span class="dot">●</span>
+  <div id="noticeText"><b>Loading odds…</b> Pulling current college football lines from TheRundown API.</div>
+</div>
+
+<div class="wrap">
+  <div class="view-tabs">
+    <button class="view-tab active" id="viewBoardBtn" type="button">Odds Board</button>
+    <button class="view-tab" id="viewSavedBtn" type="button">Saved Bets</button>
+    <button class="view-tab" id="viewLeaderboardBtn" type="button">Leaderboard</button>
+  </div>
+
+  <div id="boardView">
+    <div class="weeks" id="weekTabs"></div>
+
+    <div class="board-head">
+      <h2 id="weekTitle">Week 0 — Aug 29</h2>
+      <div class="updated" id="updatedStamp"></div>
+    </div>
+
+    <div id="gamesList"></div>
+  </div>
+
+  <div id="savedView" style="display:none;">
+    <div class="board-head">
+      <h2>Saved Bets</h2>
+      <div class="updated" id="savedStamp"></div>
+    </div>
+    <div id="savedBody"></div>
+  </div>
+
+  <div id="leaderboardView" style="display:none;">
+    <div class="board-head">
+      <h2>Leaderboard</h2>
+      <div class="updated" id="leaderboardStamp"></div>
+    </div>
+    <div id="leaderboardBody"></div>
+  </div>
+
+  <footer>
+    Sample lines shown only when the live fetch fails — not affiliated with DraftKings Inc. Odds come from TheRundown API (<code>/api/v2/sports/1/events/{date}</code>, sport 1 = NCAAF), filtered server-side to DraftKings (affiliate 19) only — see <code>server.js</code>. "Units" are a relative stake for tracking a record, not real money. If you or someone you know has a gambling problem, call 1-800-GAMBLER. Must be 21+ and present in a state where sports betting is legal to wager anywhere.
+  </footer>
+</div>
+
+<div class="slip-backdrop" id="slipBackdrop"></div>
+<aside class="slip" id="slip">
+  <div class="slip-head">
+    <h3>Bet Slip</h3>
+    <button class="slip-close" id="slipCloseBtn">✕</button>
+  </div>
+  <div class="slip-body" id="slipBody"></div>
+  <div class="slip-foot">
+    <div class="slip-stat"><span>Selections</span><span id="slipStatCount">0</span></div>
+    <div class="slip-stat"><span>Combined price</span><span id="slipStatPrice">—</span></div>
+    <button class="save-btn" id="savePicksBtn">Save picks to profile</button>
+    <div class="save-status" id="saveStatus"></div>
+    <button class="clear-btn" id="clearBtn">Clear unsaved selections</button>
+  </div>
+</aside>
+
+<script>
+/* =========================================================
+   LIVE ODDS — fetched through this app's own tiny server
+   (server.js), which holds the real TheRundown API key and
+   does all the parsing/normalizing. The browser never sees
+   the key — it only ever calls /api/odds on this same origin,
+   and gets back ready-to-render game objects. Falls back to
+   the sample matchups below if that call fails.
+   ========================================================= */
+const ODDS_ENDPOINT = '/api/odds';
+
+let WEEKS = []; // built dynamically from whatever dates the API returns
+let usingLiveData = false;
+let liveErrorMessage = '';
+
+const SAMPLE_WEEKS = [
+  { id: 'w0', label: 'Week 0 · Aug 29', title: 'Week 0 — Saturday, Aug 29' },
+  { id: 'w1', label: 'Week 1 · Sep 5',  title: 'Week 1 — Saturday, Sep 5' },
+];
+
+const SAMPLE_GAMES = {
+  w0: [
+    {
+      id:'w0-uncTcu', network:'Aer Lingus Classic · Dublin, IE', kickoff:'12:00 PM ET',
+      away:{name:'North Carolina', rank:null, record:'0-0'},
+      home:{name:'TCU', rank:14, record:'0-0'},
+      spread:{away:'+6.5 -110', home:'-6.5 -110'},
+      ml:{away:'+220', home:'-270'},
+      total:{over:'O 54.5 -110', under:'U 54.5 -110'}
+    },
+    {
+      id:'w0-jsuSc', network:'NBC / Peacock', kickoff:'3:00 PM ET',
+      away:{name:'San José State', rank:null, record:'0-0'},
+      home:{name:'USC', rank:12, record:'0-0'},
+      spread:{away:'+27.5 -110', home:'-27.5 -110'},
+      ml:{away:'+1400', home:'-4000'},
+      total:{over:'O 57.5 -110', under:'U 57.5 -110'}
+    },
+    {
+      id:'w0-ncstUva', network:'ESPN', kickoff:'3:30 PM ET',
+      away:{name:'NC State', rank:null, record:'0-0'},
+      home:{name:'Virginia', rank:21, record:'0-0'},
+      spread:{away:'+3 -110', home:'-3 -110'},
+      ml:{away:'+135', home:'-160'},
+      total:{over:'O 49.5 -110', under:'U 49.5 -110'}
+    },
+    {
+      id:'w0-memUnlv', network:'FOX / FOX One', kickoff:'10:00 PM ET',
+      away:{name:'Memphis', rank:24, record:'0-0'},
+      home:{name:'UNLV', rank:null, record:'0-0'},
+      spread:{away:'-3.5 -110', home:'+3.5 -110'},
+      ml:{away:'-175', home:'+148'},
+      total:{over:'O 58.5 -110', under:'U 58.5 -110'}
+    },
+  ],
+  w1: [
+    {
+      id:'w1-boisOre', network:'CBS', kickoff:'3:30 PM ET',
+      away:{name:'Boise State', rank:19, record:'0-0'},
+      home:{name:'Oregon', rank:3, record:'0-0'},
+      spread:{away:'+13.5 -110', home:'-13.5 -110'},
+      ml:{away:'+480', home:'-650'},
+      total:{over:'O 52.5 -110', under:'U 52.5 -110'}
+    },
+    {
+      id:'w1-cleLsu', network:'ABC', kickoff:'7:30 PM ET',
+      away:{name:'Clemson', rank:9, record:'0-0'},
+      home:{name:'LSU', rank:6, record:'0-0'},
+      spread:{away:'+2.5 -110', home:'-2.5 -110'},
+      ml:{away:'+120', home:'-142'},
+      total:{over:'O 51.5 -110', under:'U 51.5 -110'}
+    },
+    {
+      id:'w1-colGt', network:'ESPN', kickoff:'8:00 PM ET',
+      away:{name:'Colorado', rank:null, record:'0-0'},
+      home:{name:'Georgia Tech', rank:22, record:'0-0'},
+      spread:{away:'+7 -110', home:'-7 -110'},
+      ml:{away:'+225', home:'-270'},
+      total:{over:'O 53.5 -110', under:'U 53.5 -110'}
+    },
+    {
+      id:'w1-idahoUtah', network:'ESPNU', kickoff:'9:00 PM ET',
+      away:{name:'Idaho', rank:null, record:'0-0'},
+      home:{name:'Utah', rank:17, record:'0-0'},
+      spread:{away:'+24.5 -110', home:'-24.5 -110'},
+      ml:{away:'+1100', home:'-3200'},
+      total:{over:'O 46.5 -110', under:'U 46.5 -110'}
+    },
+    {
+      id:'w1-wiscNd', network:'NBC / Peacock · Lambeau Field', kickoff:'7:30 PM ET (Sun)',
+      away:{name:'Wisconsin', rank:null, record:'0-0'},
+      home:{name:'Notre Dame', rank:8, record:'0-0'},
+      spread:{away:'+10.5 -110', home:'-10.5 -110'},
+      ml:{away:'+340', home:'-420'},
+      total:{over:'O 47.5 -110', under:'U 47.5 -110'}
+    },
+  ]
+};
+
+/* Fetches the already-normalized schedule from our own server. Falls back to sample data on any failure. */
+async function buildSchedule(){
+  try{
+    const res = await fetch(ODDS_ENDPOINT);
+    const body = await res.json().catch(()=>({}));
+
+    if(!res.ok || !body.ok){
+      throw new Error(body.error || `Server responded ${res.status}`);
+    }
+    if(!body.weeks || body.weeks.length === 0){
+      throw new Error('No DraftKings NCAAF games currently listed');
+    }
+
+    WEEKS = body.weeks;
+    loaded = body.games;
+    usingLiveData = true;
+    currentWeek = body.weeks[0].id;
+  }catch(err){
+    console.error('Live odds fetch failed, falling back to sample data:', err);
+    liveErrorMessage = err.message || String(err);
+    WEEKS = SAMPLE_WEEKS;
+    loaded = SAMPLE_GAMES;
+    usingLiveData = false;
+    currentWeek = SAMPLE_WEEKS[0].id;
+  }
+}
+
+
+/* ========================= State ========================= */
+let currentWeek = '';
+let loaded = {}; // weekId -> array of games, populated by buildSchedule()
+let selections = {}; // key -> selection object
+
+const gamesListEl = document.getElementById('gamesList');
+const weekTabsEl = document.getElementById('weekTabs');
+const weekTitleEl = document.getElementById('weekTitle');
+const updatedStampEl = document.getElementById('updatedStamp');
+const slipBody = document.getElementById('slipBody');
+const slipCountBadge = document.getElementById('slipCountBadge');
+const slipStatCount = document.getElementById('slipStatCount');
+const slipStatPrice = document.getElementById('slipStatPrice');
+const savePicksBtn = document.getElementById('savePicksBtn');
+const saveStatus = document.getElementById('saveStatus');
+
+function selKey(gameId, market, side){ return `${gameId}::${market}::${side}`; }
+
+function americanToDecimal(str){
+  const m = str.match(/([+-]\d+)(?!.*\d)/); // last number = price
+  if(!m) return 2.0;
+  const n = parseInt(m[1],10);
+  return n > 0 ? 1 + n/100 : 1 + 100/Math.abs(n);
+}
+
+function combinedPriceLabel(){
+  const list = Object.values(selections);
+  if(list.length === 0) return '—';
+  const dec = list.reduce((acc,s)=> acc * americanToDecimal(s.priceText), 1);
+  const americanEq = dec >= 2 ? Math.round((dec-1)*100) : Math.round(-100/(dec-1));
+  return (americanEq > 0 ? '+' : '') + americanEq + `  (${dec.toFixed(2)}x)`;
+}
+
+function render(){
+  renderWeekTabs();
+  renderGames();
+  renderSlip();
+  renderSavedBets();
+}
+
+function renderWeekTabs(){
+  weekTabsEl.innerHTML = '';
+  WEEKS.forEach(w=>{
+    const b = document.createElement('button');
+    b.className = 'week-btn' + (w.id===currentWeek ? ' active':'');
+    b.textContent = w.label;
+    b.onclick = ()=>{ currentWeek = w.id; render(); };
+    weekTabsEl.appendChild(b);
+  });
+  const w = WEEKS.find(x=>x.id===currentWeek);
+  weekTitleEl.textContent = w ? w.title : '';
+  updatedStampEl.textContent =
+    (usingLiveData ? 'LIVE DRAFTKINGS LINES · ' : 'SAMPLE LINES (LIVE FETCH FAILED) · ') +
+    'LOADED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+}
+
+function oddsButton(g, teamLabel, market, side, lineText, priceText, point){
+  const key = selKey(g.id, market, side);
+  const btn = document.createElement('button');
+  btn.className = 'odds-btn' + (selections[key] ? ' selected' : '');
+  btn.innerHTML = `<span class="line">${lineText}</span><span class="price">${priceText}</span>`;
+  btn.onclick = ()=> toggleSelection(key, {
+    gameId: g.id, market, side,
+    gameSummary: `${g.away.name} @ ${g.home.name}`,
+    pickLabel: `${teamLabel} ${market==='total' ? '' : lineText}`.trim(),
+    priceText,
+    point: (point === undefined ? null : point),
+    dateKey: g.dateKey || null,
+    kickoffISO: g.kickoffISO || null,
+  });
+  return btn;
+}
+
+function renderGames(){
+  gamesListEl.innerHTML = '';
+  const games = loaded[currentWeek] || [];
+  games.forEach(g=>{
+    const card = document.createElement('div');
+    card.className = 'game';
+
+    card.innerHTML = `
+      <div class="game-meta"><span>${g.network}</span><span>${g.kickoff}</span></div>
+      <div class="matchup">
+        <div class="team-row">
+          <div class="team-name">${g.away.rank ? `<span class="team-rank">#${g.away.rank}</span>`:''} ${g.away.name}</div>
+          <div class="team-record">${g.away.record}</div>
+        </div>
+        <div class="team-row">
+          <div class="team-name">${g.home.rank ? `<span class="team-rank">#${g.home.rank}</span>`:''} ${g.home.name}</div>
+          <div class="team-record">${g.home.record}</div>
+        </div>
+      </div>
+    `;
+
+    const marketsEl = document.createElement('div');
+    marketsEl.className = 'markets';
+
+    const spreadPoints = g.spreadPoints || {};
+    const totalPoint = (typeof g.totalPoint === 'number') ? g.totalPoint : null;
+
+    // Spread column
+    const spreadCol = document.createElement('div');
+    spreadCol.appendChild(oddsButton(g, g.away.name, 'spread', 'away', g.spread.away.split(' ')[0], g.spread.away.split(' ')[1], spreadPoints.away ?? null));
+    spreadCol.appendChild(oddsButton(g, g.home.name, 'spread', 'home', g.spread.home.split(' ')[0], g.spread.home.split(' ')[1], spreadPoints.home ?? null));
+
+    // Moneyline column
+    const mlCol = document.createElement('div');
+    mlCol.appendChild(oddsButton(g, g.away.name, 'ml', 'away', 'ML', g.ml.away, null));
+    mlCol.appendChild(oddsButton(g, g.home.name, 'ml', 'home', 'ML', g.ml.home, null));
+
+    // Total column
+    const totalCol = document.createElement('div');
+    totalCol.appendChild(oddsButton(g, 'Over', 'total', 'over', g.total.over.split(' ').slice(0,2).join(' '), g.total.over.split(' ')[2], totalPoint));
+    totalCol.appendChild(oddsButton(g, 'Under', 'total', 'under', g.total.under.split(' ').slice(0,2).join(' '), g.total.under.split(' ')[2], totalPoint));
+
+    marketsEl.appendChild(spreadCol);
+    marketsEl.appendChild(mlCol);
+    marketsEl.appendChild(totalCol);
+    card.appendChild(marketsEl);
+    gamesListEl.appendChild(card);
+  });
+}
+
+function unitsProfitLabel(sel){
+  const units = Number(sel.units) > 0 ? Number(sel.units) : 1;
+  if(sel.status === 'win'){
+    const profit = units * (americanToDecimal(sel.priceText) - 1);
+    return `+${profit.toFixed(2)}u`;
+  }
+  if(sel.status === 'loss') return `-${units.toFixed(2)}u`;
+  if(sel.status === 'push') return 'push';
+  return null;
+}
+
+// Games with no known kickoff time ("Time TBD") are treated as not yet
+// started through the end of their listed game day — conservative, but
+// avoids accidentally allowing a delete on a game that may have already
+// kicked off.
+function isPickBeforeKickoff(sel){
+  const now = Date.now();
+  if(sel.kickoffISO){
+    const t = new Date(sel.kickoffISO).getTime();
+    if(!Number.isNaN(t)) return now < t;
+  }
+  if(sel.dateKey){
+    const dayEnd = new Date(sel.dateKey + 'T23:59:59Z').getTime();
+    return now < dayEnd;
+  }
+  return false;
+}
+
+async function deletePick(key, { confirmFirst } = {}){
+  const sel = selections[key];
+  if(!sel) return;
+  if(confirmFirst && !confirm(`Delete this saved pick?\n\n${sel.gameSummary} — ${sel.pickLabel}\n\nThis can't be undone.`)) return;
+  delete selections[key];
+  render();
+  await persist();
+}
+
+function renderSlip(){
+  const list = Object.values(selections);
+  slipCountBadge.textContent = list.length;
+  slipStatCount.textContent = list.length;
+  slipStatPrice.textContent = combinedPriceLabel();
+
+  const unsavedCount = list.filter(s => !s.locked).length;
+  savePicksBtn.disabled = unsavedCount === 0;
+  savePicksBtn.textContent = currentUser
+    ? (unsavedCount > 0 ? `Save ${unsavedCount} pick${unsavedCount===1?'':'s'} to profile` : 'All picks saved')
+    : 'Log in to save picks';
+
+  if(list.length === 0){
+    slipBody.innerHTML = `<div class="slip-empty"><span class="glyph">🎟</span>No selections yet.<br>Tap any line on the board to save it here.</div>`;
+    return;
+  }
+
+  slipBody.innerHTML = '';
+  list.sort((a,b)=> a.savedAt - b.savedAt).forEach(sel=>{
+    const t = document.createElement('div');
+    t.className = 'ticket';
+
+    let badgeHtml;
+    if(!sel.locked){
+      badgeHtml = `<span class="pick-badge unsaved">Not saved</span>`;
+    } else if(sel.status === 'pending'){
+      badgeHtml = `<span class="pick-badge pending">Pending</span>`;
+    } else {
+      const profit = unitsProfitLabel(sel);
+      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+    }
+
+    const canEditUnits = !sel.locked || sel.status === 'pending';
+    const beforeKickoff = isPickBeforeKickoff(sel);
+    const canRemove = !sel.locked || beforeKickoff;
+
+    t.innerHTML = `
+      <div class="ticket-top">
+        <div>
+          <div class="ticket-game">${sel.gameSummary}</div>
+          <div class="ticket-pick">${sel.pickLabel}</div>
+        </div>
+        <div class="ticket-price">${sel.priceText}</div>
+      </div>
+      <div class="ticket-row">
+        <div class="units-field">
+          <label for="units-${sel.key}">Units</label>
+          <input class="units-input" id="units-${sel.key}" type="number" min="0.25" step="0.25"
+            value="${Number(sel.units) || 1}" ${canEditUnits ? '' : 'disabled'}>
+        </div>
+        ${badgeHtml}
+      </div>
+      ${canRemove
+        ? `<button class="ticket-remove" aria-label="${sel.locked ? 'Delete saved pick' : 'Remove selection'}">${sel.locked ? 'Delete pick' : 'Remove'} ✕</button>`
+        : `<div class="saved-locked-note" style="margin-top:8px;">Kickoff has passed — locked in</div>`}
+    `;
+
+    const unitsInput = t.querySelector('.units-input');
+    unitsInput.onchange = async ()=>{
+      const val = parseFloat(unitsInput.value);
+      selections[sel.key].units = (Number.isFinite(val) && val > 0) ? val : 1;
+      await persist();
+      renderSlip();
+    };
+
+    const removeBtn = t.querySelector('.ticket-remove');
+    if(removeBtn){
+      removeBtn.onclick = ()=> deletePick(sel.key, { confirmFirst: sel.locked });
+    }
+
+    slipBody.appendChild(t);
+  });
+}
+
+async function savePicksToProfile(){
+  if(!currentUser){
+    openAuthModal('login');
+    return;
+  }
+  const unsaved = Object.values(selections).filter(s => !s.locked);
+  if(unsaved.length === 0) return;
+
+  unsaved.forEach(sel=>{
+    selections[sel.key].locked = true;
+    selections[sel.key].placedAt = Date.now();
+  });
+
+  await persist();
+  render();
+  saveStatus.textContent = `Saved ${unsaved.length} pick${unsaved.length===1?'':'s'} to your profile.`;
+  saveStatus.classList.add('ok');
+  setTimeout(()=>{ saveStatus.textContent = ''; saveStatus.classList.remove('ok'); }, 4000);
+}
+
+async function toggleSelection(key, data){
+  if(selections[key]){
+    // Locked (saved) picks are part of your record — don't let a re-tap
+    // on the board silently remove them. Unlocked ones toggle off normally.
+    if(selections[key].locked) return;
+    delete selections[key];
+  } else {
+    selections[key] = { key, ...data, units: 1, locked: false, status: 'pending', savedAt: Date.now() };
+  }
+  render();
+  await persist();
+}
+
+/* ========================= Auth state ========================= */
+let currentUser = null; // { id, username } or null for guest
+const GUEST_STORAGE_KEY = 'gridiron-selections-guest';
+
+async function apiFetch(url, options){
+  const res = await fetch(url, {
+    headers: { 'Content-Type': 'application/json' },
+    ...options,
+  });
+  let body = {};
+  try{ body = await res.json(); }catch(e){ /* no body */ }
+  return { res, body };
+}
+
+async function fetchCurrentUser(){
+  try{
+    const { body } = await apiFetch('/api/auth/me');
+    return body.user || null;
+  }catch(e){
+    return null;
+  }
+}
+
+function readGuestSelections(){
+  try{
+    const raw = localStorage.getItem(GUEST_STORAGE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  }catch(e){
+    return {};
+  }
+}
+
+function writeGuestSelections(sel){
+  try{
+    localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(sel));
+  }catch(e){
+    console.error('Could not save selections locally', e);
+  }
+}
+
+/* ========================= Persistence ========================= */
+async function persist(){
+  if(currentUser){
+    try{
+      const { res, body } = await apiFetch('/api/picks', {
+        method: 'PUT',
+        body: JSON.stringify({ picks: selections }),
+      });
+      if(!res.ok || !body.ok){
+        console.error('Could not save selections to account:', body.error);
+        return;
+      }
+      // If the server restored a pick we tried to delete (its game had
+      // already started), reflect that back in the UI instead of the two
+      // silently drifting out of sync.
+      if(body.picks && JSON.stringify(body.picks) !== JSON.stringify(selections)){
+        selections = body.picks;
+        render();
+      }
+    }catch(e){
+      console.error('Could not save selections to account', e);
+    }
+  } else {
+    writeGuestSelections(selections);
+  }
+}
+
+async function restore(){
+  currentUser = await fetchCurrentUser();
+
+  if(currentUser){
+    try{
+      const { res, body } = await apiFetch('/api/picks');
+      selections = (res.ok && body.ok && body.picks) ? body.picks : {};
+    }catch(e){
+      selections = {};
+    }
+  } else {
+    selections = readGuestSelections();
+  }
+}
+
+/* Called right after a successful login/signup: folds any picks made as a
+   guest on this browser into the account (guest picks win on a conflict,
+   since they're the most recent action), then clears the guest copy. */
+async function mergeGuestIntoAccount(){
+  const guestSelections = readGuestSelections();
+
+  let serverSelections = {};
+  try{
+    const { res, body } = await apiFetch('/api/picks');
+    serverSelections = (res.ok && body.ok && body.picks) ? body.picks : {};
+  }catch(e){ /* fine, just use guest picks */ }
+
+  selections = { ...serverSelections, ...guestSelections };
+  localStorage.removeItem(GUEST_STORAGE_KEY);
+  await persist();
+}
+
+savePicksBtn.onclick = savePicksToProfile;
+
+document.getElementById('clearBtn').onclick = async ()=>{
+  Object.keys(selections).forEach(key=>{
+    if(!selections[key].locked) delete selections[key];
+  });
+  render();
+  await persist();
+};
+
+/* ========================= Auth UI ========================= */
+const authArea = document.getElementById('authArea');
+const authBackdrop = document.getElementById('authBackdrop');
+const authForm = document.getElementById('authForm');
+const authUsername = document.getElementById('authUsername');
+const authPassword = document.getElementById('authPassword');
+const authError = document.getElementById('authError');
+const authSubmit = document.getElementById('authSubmit');
+const authHint = document.getElementById('authHint');
+const tabLogin = document.getElementById('tabLogin');
+const tabSignup = document.getElementById('tabSignup');
+
+let authMode = 'login';
+
+function renderAuthArea(){
+  if(currentUser){
+    const initial = currentUser.username.charAt(0).toUpperCase();
+    authArea.innerHTML = `
+      <div class="account-chip">
+        <span class="avatar">${initial}</span>
+        <span class="uname">${currentUser.username}</span>
+      </div>
+      <button class="logout-btn" id="logoutBtn">Log out</button>
+    `;
+    document.getElementById('logoutBtn').onclick = handleLogout;
+  } else {
+    authArea.innerHTML = `<button class="auth-btn primary" id="openAuthBtn">Log in to save picks</button>`;
+    document.getElementById('openAuthBtn').onclick = ()=> openAuthModal('login');
+  }
+}
+
+function openAuthModal(mode){
+  setAuthMode(mode);
+  authError.textContent = '';
+  authForm.reset();
+  authBackdrop.classList.add('open');
+  authUsername.focus();
+}
+
+function closeAuthModal(){
+  authBackdrop.classList.remove('open');
+}
+
+function setAuthMode(mode){
+  authMode = mode;
+  tabLogin.classList.toggle('active', mode === 'login');
+  tabSignup.classList.toggle('active', mode === 'signup');
+  authSubmit.textContent = mode === 'login' ? 'Log in' : 'Create account';
+  authPassword.setAttribute('autocomplete', mode === 'login' ? 'current-password' : 'new-password');
+  authHint.textContent = mode === 'login'
+    ? 'Any selections saved as a guest on this browser will carry over once you log in.'
+    : 'Pick any username and a password (8+ characters). Your guest selections on this browser will carry over.';
+  authError.textContent = '';
+}
+
+tabLogin.onclick = ()=> setAuthMode('login');
+tabSignup.onclick = ()=> setAuthMode('signup');
+document.getElementById('authModalClose').onclick = closeAuthModal;
+authBackdrop.onclick = (e)=>{ if(e.target === authBackdrop) closeAuthModal(); };
+
+authForm.onsubmit = async (e)=>{
+  e.preventDefault();
+  authError.textContent = '';
+  authSubmit.disabled = true;
+
+  const username = authUsername.value.trim();
+  const password = authPassword.value;
+  const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+
+  try{
+    const { res, body } = await apiFetch(endpoint, {
+      method: 'POST',
+      body: JSON.stringify({ username, password }),
+    });
+
+    if(!res.ok || !body.ok){
+      authError.textContent = body.error || 'Something went wrong. Try again.';
+      authSubmit.disabled = false;
+      return;
+    }
+
+    currentUser = body.user;
+    await mergeGuestIntoAccount();
+    closeAuthModal();
+    renderAuthArea();
+    render();
+  }catch(err){
+    authError.textContent = 'Network error — check your connection and try again.';
+  }finally{
+    authSubmit.disabled = false;
+  }
+};
+
+async function handleLogout(){
+  try{ await apiFetch('/api/auth/logout', { method:'POST' }); }catch(e){ /* fine */ }
+  currentUser = null;
+  selections = readGuestSelections();
+  renderAuthArea();
+  render();
+}
+
+/* ========================= View switching (Board / Saved Bets / Leaderboard) ========================= */
+const viewBoardBtn = document.getElementById('viewBoardBtn');
+const viewSavedBtn = document.getElementById('viewSavedBtn');
+const viewLeaderboardBtn = document.getElementById('viewLeaderboardBtn');
+const boardView = document.getElementById('boardView');
+const savedView = document.getElementById('savedView');
+const savedBody = document.getElementById('savedBody');
+const savedStamp = document.getElementById('savedStamp');
+const leaderboardView = document.getElementById('leaderboardView');
+const leaderboardBody = document.getElementById('leaderboardBody');
+const leaderboardStamp = document.getElementById('leaderboardStamp');
+
+function switchView(view){
+  viewBoardBtn.classList.toggle('active', view === 'board');
+  viewSavedBtn.classList.toggle('active', view === 'saved');
+  viewLeaderboardBtn.classList.toggle('active', view === 'leaderboard');
+  boardView.style.display = view === 'board' ? '' : 'none';
+  savedView.style.display = view === 'saved' ? '' : 'none';
+  leaderboardView.style.display = view === 'leaderboard' ? '' : 'none';
+  if(view === 'saved') renderSavedBets();
+  if(view === 'leaderboard') loadLeaderboard();
+}
+
+viewBoardBtn.onclick = ()=> switchView('board');
+viewSavedBtn.onclick = ()=> switchView('saved');
+viewLeaderboardBtn.onclick = ()=> switchView('leaderboard');
+
+function renderSavedBets(){
+  if(!savedBody) return; // not booted yet
+
+  if(!currentUser){
+    savedStamp.textContent = '';
+    savedBody.innerHTML = `<div class="lb-loading">Log in to view and manage your saved bets.<br><br><button class="auth-btn primary" id="savedLoginBtn">Log in</button></div>`;
+    const btn = document.getElementById('savedLoginBtn');
+    if(btn) btn.onclick = ()=> openAuthModal('login');
+    return;
+  }
+
+  const saved = Object.values(selections).filter(s => s.locked);
+
+  if(saved.length === 0){
+    savedStamp.textContent = '';
+    savedBody.innerHTML = `<div class="lb-loading">No saved bets yet.<br>Tap a line on the board, then hit "Save picks to profile" in your bet slip.</div>`;
+    return;
+  }
+
+  savedStamp.textContent = `${saved.length} SAVED`;
+  saved.sort((a,b)=> (b.placedAt || b.savedAt) - (a.placedAt || a.savedAt));
+
+  savedBody.innerHTML = '';
+  saved.forEach(sel=>{
+    const card = document.createElement('div');
+    card.className = 'saved-card';
+
+    let badgeHtml;
+    if(sel.status === 'pending'){
+      badgeHtml = `<span class="pick-badge pending">Pending</span>`;
+    } else {
+      const profit = unitsProfitLabel(sel);
+      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+    }
+
+    const beforeKickoff = isPickBeforeKickoff(sel);
+
+    card.innerHTML = `
+      <div class="saved-card-main">
+        <div class="saved-card-game">${sel.gameSummary}</div>
+        <div class="saved-card-pick">${sel.pickLabel}</div>
+        <div class="saved-card-meta">
+          <span>${Number(sel.units) || 1}u</span>
+          ${badgeHtml}
+        </div>
+      </div>
+      <div class="saved-card-right">
+        <div class="saved-card-price">${sel.priceText}</div>
+        ${beforeKickoff
+          ? `<button class="saved-delete-btn" aria-label="Delete saved pick">Delete pick</button>`
+          : `<div class="saved-locked-note">Kickoff passed — locked in</div>`}
+      </div>
+    `;
+
+    const deleteBtn = card.querySelector('.saved-delete-btn');
+    if(deleteBtn){
+      deleteBtn.onclick = ()=> deletePick(sel.key, { confirmFirst: true });
+    }
+
+    savedBody.appendChild(card);
+  });
+}
+
+async function loadLeaderboard(){
+  leaderboardBody.innerHTML = `<div class="lb-loading">Grading recently finished games and tallying records — this can take a few seconds…</div>`;
+  leaderboardStamp.textContent = '';
+  try{
+    const { res, body } = await apiFetch('/api/leaderboard');
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    renderLeaderboard(body.rows || []);
+    leaderboardStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }catch(err){
+    leaderboardBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
+  }
+}
+
+function renderLeaderboard(rows){
+  if(!rows || rows.length === 0){
+    leaderboardBody.innerHTML = `<div class="lb-loading">No settled picks yet.<br>Once saved picks' games finish (scores are checked automatically), standings show up here.</div>`;
+    return;
+  }
+  leaderboardBody.innerHTML = `
+    <table class="lb-table">
+      <thead>
+        <tr><th>#</th><th>User</th><th>Record</th><th>Win %</th><th>Units</th></tr>
+      </thead>
+      <tbody>
+        ${rows.map((r,i)=>`
+          <tr>
+            <td>${i+1}</td>
+            <td>${r.username}</td>
+            <td>${r.wins}-${r.losses}${r.pushes ? '-' + r.pushes : ''}</td>
+            <td>${r.winPct === null ? '—' : r.winPct.toFixed(1) + '%'}</td>
+            <td class="${r.totalUnits > 0 ? 'lb-pos' : (r.totalUnits < 0 ? 'lb-neg' : '')}">${r.totalUnits > 0 ? '+' : ''}${r.totalUnits.toFixed(2)}u</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+/* ========================= Mobile slip open/close ========================= */
+const slipEl = document.getElementById('slip');
+const backdropEl = document.getElementById('slipBackdrop');
+document.getElementById('slipToggle').onclick = ()=>{
+  slipEl.classList.add('open'); backdropEl.classList.add('open');
+};
+document.getElementById('slipCloseBtn').onclick = closeSlip;
+backdropEl.onclick = closeSlip;
+function closeSlip(){ slipEl.classList.remove('open'); backdropEl.classList.remove('open'); }
+
+function renderNotice(){
+  const el = document.getElementById('noticeText');
+  if(usingLiveData){
+    el.innerHTML = `<b>Live board.</b> College football lines below are pulled from TheRundown API, filtered to DraftKings only. Tap a line to add it to your slip, set units, then hit <b>Save picks to profile</b> to lock it into your record — saved picks get graded automatically once their game finishes, and feed the Leaderboard tab.`;
+  } else {
+    el.innerHTML = `<b>Live fetch failed, showing sample lines.</b> (${liveErrorMessage || 'unknown error'}) This can mean the API key is invalid/out of quota, or there just aren't any NCAAF games with DraftKings odds posted in the lookout window right now. What's shown instead are illustrative sample lines on real matchups — saving picks still works, but sample-game picks won't ever grade since they aren't real games.`;
+  }
+}
+
+/* ========================= Boot ========================= */
+(async function init(){
+  await restore();
+  renderAuthArea();
+  await buildSchedule();
+  renderNotice();
+  render();
+})();
+</script>
+</body>
+</html>

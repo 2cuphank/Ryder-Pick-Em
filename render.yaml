@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: ryder-pick-em
+    runtime: node
+    plan: starter          # smallest always-on tier; verify current pricing on Render's site
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: RUNDOWN_API_KEY
+        sync: false         # you'll paste the real value in the Render dashboard, not here
+      - key: SESSION_SECRET
+        sync: false         # same — paste a random string in the dashboard
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
