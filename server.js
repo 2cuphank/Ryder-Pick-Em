@@ -13,10 +13,9 @@ const SESSION_SECRET = process.env.SESSION_SECRET;
 const SPORT_ID = 1;                 // NCAAF, per TheRundown's sport ID reference
 const DRAFTKINGS_AFFILIATE_ID = '19'; // DraftKings, per TheRundown's affiliate ID reference
 const DAYS_AHEAD = 14;              // scan the next 2 weeks for games with DK odds posted
-const REQUEST_SPACING_MS = 2000;    // gap between each day's request — your plan allows ~1 req/sec
-const MAX_RETRIES = 3;              // retries per date if we still get rate-limited
+const REQUEST_SPACING_MS = 2500;    // global minimum gap between ANY two TheRundown requests
+const MAX_RETRIES = 3;              // retries per request if we still get rate-limited
 const RETRY_BACKOFF_MS = 3000;      // base backoff when TheRundown doesn't send a Retry-After header
-const GRADE_EVENT_SPACING_MS = 2000;      // same spacing rule applies to score lookups
 const MAX_EVENTS_TO_GRADE_PER_REQUEST = 5; // cap per leaderboard load so it doesn't take forever
 const GRADE_ELIGIBLE_BUFFER_MS = 4 * 60 * 60 * 1000; // wait 4h past kickoff before checking a score
 
@@ -275,7 +274,26 @@ function normalizeEvent(event, dateKey) {
   };
 }
 
+// A global minimum gap between ANY two calls to TheRundown — enforced here
+// rather than per-caller, because the odds fetch and the grading sweep
+// used to pace themselves independently. If both got triggered close
+// together (loading the board, then quickly checking the Leaderboard tab),
+// their two streams of requests could interleave and land under a second
+// apart even though each one individually looked properly spaced. This
+// gate makes that impossible: every single request to TheRundown, from
+// anywhere in the app, waits its turn behind the last one.
+let lastRundownRequestAt = 0;
+
+async function waitForRundownSlot() {
+  const elapsed = Date.now() - lastRundownRequestAt;
+  if (elapsed < REQUEST_SPACING_MS) {
+    await sleep(REQUEST_SPACING_MS - elapsed);
+  }
+  lastRundownRequestAt = Date.now();
+}
+
 async function rundownGet(url, attempt = 1) {
+  await waitForRundownSlot();
   const res = await fetch(url, { headers: { 'X-TheRundown-Key': RUNDOWN_KEY } });
 
   if (res.status === 429 && attempt <= MAX_RETRIES) {
@@ -329,9 +347,9 @@ async function buildSchedule() {
     dateKeys.push(isoDate(d));
   }
 
-  // One request per date — each is billed separately by TheRundown. These
-  // run sequentially with a gap between them (rather than all at once) to
-  // stay under the plan's strict per-second rate limit.
+  // One request per date — each is billed separately by TheRundown. The
+  // actual spacing between requests is enforced globally inside
+  // rundownGet(), so this loop just runs them one at a time.
   const results = [];
   for (let i = 0; i < dateKeys.length; i++) {
     try {
@@ -339,9 +357,6 @@ async function buildSchedule() {
     } catch (err) {
       console.error(err.message);
       results.push([]);
-    }
-    if (i < dateKeys.length - 1) {
-      await sleep(REQUEST_SPACING_MS);
     }
   }
 
@@ -514,7 +529,6 @@ async function runGradingSweep() {
     } catch (err) {
       console.error(`Could not fetch score for event ${gameId}:`, err.message);
     }
-    if (i < toFetch.length - 1) await sleep(GRADE_EVENT_SPACING_MS);
   }
 
   if (toFetch.length > 0) writeGradedEvents(gradedEvents);
