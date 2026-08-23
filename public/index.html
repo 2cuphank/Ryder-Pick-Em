@@ -348,6 +348,55 @@
   .saved-delete-btn:hover{border-color:var(--crimson);color:var(--crimson);}
   .saved-locked-note{font-size:11px;color:var(--text-faint);font-style:italic;white-space:nowrap;}
 
+  /* ---------- Admin ---------- */
+  .admin-user-list{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;}
+  .admin-user-chip{
+    background:var(--surface);border:1px solid var(--line);color:var(--text);
+    padding:9px 14px;border-radius:8px;font-size:13px;cursor:pointer;
+    font-family:'Inter',sans-serif;display:flex;align-items:center;gap:8px;
+  }
+  .admin-user-chip:hover{border-color:var(--gold-dim);}
+  .admin-user-chip.active{background:rgba(242,169,59,0.12);border-color:var(--gold);color:var(--gold);}
+  .admin-user-chip .count{
+    font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-faint);
+    background:var(--surface-raised);border-radius:999px;padding:1px 7px;
+  }
+  .admin-back-btn{
+    background:none;border:none;color:var(--text-dim);cursor:pointer;font-size:13px;
+    margin-bottom:14px;padding:0;font-family:'Inter',sans-serif;text-decoration:underline;
+  }
+  .admin-back-btn:hover{color:var(--gold);}
+  .admin-editor-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  .admin-editor-table th{
+    text-align:left;font-size:10px;color:var(--text-faint);text-transform:uppercase;
+    letter-spacing:.5px;padding:10px 12px;border-bottom:1px solid var(--line);font-weight:600;
+  }
+  .admin-editor-table td{padding:10px 12px;border-bottom:1px solid var(--line);font-size:13px;vertical-align:middle;}
+  .admin-editor-table tr:last-child td{border-bottom:none;}
+  .admin-pick-desc{font-size:12.5px;}
+  .admin-pick-game{color:var(--text-faint);font-family:'IBM Plex Mono',monospace;font-size:10.5px;margin-bottom:2px;}
+  .admin-input{
+    background:var(--surface-raised);border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;color:var(--text);font-size:12.5px;font-family:'IBM Plex Mono',monospace;width:70px;
+  }
+  .admin-select{
+    background:var(--surface-raised);border:1px solid var(--line);border-radius:6px;
+    padding:6px 8px;color:var(--text);font-size:12.5px;font-family:'Inter',sans-serif;
+  }
+  .admin-checkbox{width:16px;height:16px;accent-color:var(--gold);}
+  .admin-row-delete{
+    background:none;border:1px solid var(--line);color:var(--text-faint);
+    padding:6px 10px;border-radius:6px;font-size:11.5px;cursor:pointer;
+  }
+  .admin-row-delete:hover{border-color:var(--crimson);color:var(--crimson);}
+  .admin-save-bar{display:flex;justify-content:space-between;align-items:center;margin-top:16px;gap:12px;flex-wrap:wrap;}
+  .admin-save-btn{
+    background:var(--gold);border:none;color:#1a1206;padding:11px 20px;
+    border-radius:8px;font-weight:700;font-size:13.5px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .admin-save-btn:hover{filter:brightness(1.06);}
+  .admin-save-status{font-size:12px;color:var(--win-green);}
+
   footer{
     max-width:1180px;margin:40px auto 0;padding:18px 20px 0;
     border-top:1px solid var(--line);
@@ -421,6 +470,7 @@
     <button class="view-tab active" id="viewBoardBtn" type="button">Odds Board</button>
     <button class="view-tab" id="viewSavedBtn" type="button">Saved Bets</button>
     <button class="view-tab" id="viewLeaderboardBtn" type="button">Leaderboard</button>
+    <button class="view-tab" id="viewAdminBtn" type="button" style="display:none;">Admin</button>
   </div>
 
   <div id="boardView">
@@ -448,6 +498,14 @@
       <div class="updated" id="leaderboardStamp"></div>
     </div>
     <div id="leaderboardBody"></div>
+  </div>
+
+  <div id="adminView" style="display:none;">
+    <div class="board-head">
+      <h2>Admin — Edit Picks</h2>
+      <div class="updated" id="adminStamp"></div>
+    </div>
+    <div id="adminBody"></div>
   </div>
 
   <footer>
@@ -994,7 +1052,7 @@ function renderAuthArea(){
     authArea.innerHTML = `
       <div class="account-chip">
         <span class="avatar">${initial}</span>
-        <span class="uname">${currentUser.username}</span>
+        <span class="uname">${currentUser.username}${currentUser.isAdmin ? ' 👑' : ''}</span>
       </div>
       <button class="logout-btn" id="logoutBtn">Log out</button>
     `;
@@ -1002,6 +1060,14 @@ function renderAuthArea(){
   } else {
     authArea.innerHTML = `<button class="auth-btn primary" id="openAuthBtn">Log in to save picks</button>`;
     document.getElementById('openAuthBtn').onclick = ()=> openAuthModal('login');
+  }
+
+  if(viewAdminBtn){
+    const isAdmin = !!(currentUser && currentUser.isAdmin);
+    viewAdminBtn.style.display = isAdmin ? '' : 'none';
+    if(!isAdmin && adminView.style.display !== 'none'){
+      switchView('board'); // don't leave a logged-out/non-admin user stuck on a hidden tab
+    }
   }
 }
 
@@ -1075,10 +1141,11 @@ async function handleLogout(){
   render();
 }
 
-/* ========================= View switching (Board / Saved Bets / Leaderboard) ========================= */
+/* ========================= View switching (Board / Saved Bets / Leaderboard / Admin) ========================= */
 const viewBoardBtn = document.getElementById('viewBoardBtn');
 const viewSavedBtn = document.getElementById('viewSavedBtn');
 const viewLeaderboardBtn = document.getElementById('viewLeaderboardBtn');
+const viewAdminBtn = document.getElementById('viewAdminBtn');
 const boardView = document.getElementById('boardView');
 const savedView = document.getElementById('savedView');
 const savedBody = document.getElementById('savedBody');
@@ -1086,21 +1153,158 @@ const savedStamp = document.getElementById('savedStamp');
 const leaderboardView = document.getElementById('leaderboardView');
 const leaderboardBody = document.getElementById('leaderboardBody');
 const leaderboardStamp = document.getElementById('leaderboardStamp');
+const adminView = document.getElementById('adminView');
+const adminBody = document.getElementById('adminBody');
+const adminStamp = document.getElementById('adminStamp');
 
 function switchView(view){
   viewBoardBtn.classList.toggle('active', view === 'board');
   viewSavedBtn.classList.toggle('active', view === 'saved');
   viewLeaderboardBtn.classList.toggle('active', view === 'leaderboard');
+  viewAdminBtn.classList.toggle('active', view === 'admin');
   boardView.style.display = view === 'board' ? '' : 'none';
   savedView.style.display = view === 'saved' ? '' : 'none';
   leaderboardView.style.display = view === 'leaderboard' ? '' : 'none';
+  adminView.style.display = view === 'admin' ? '' : 'none';
   if(view === 'saved') renderSavedBets();
   if(view === 'leaderboard') loadLeaderboard();
+  if(view === 'admin') loadAdminUserList();
 }
 
 viewBoardBtn.onclick = ()=> switchView('board');
 viewSavedBtn.onclick = ()=> switchView('saved');
 viewLeaderboardBtn.onclick = ()=> switchView('leaderboard');
+viewAdminBtn.onclick = ()=> switchView('admin');
+
+/* ========================= Admin ========================= */
+async function loadAdminUserList(){
+  adminStamp.textContent = '';
+  adminBody.innerHTML = `<div class="lb-loading">Loading users…</div>`;
+  try{
+    const { res, body } = await apiFetch('/api/admin/users');
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    renderAdminUserList(body.users || []);
+  }catch(err){
+    adminBody.innerHTML = `<div class="lb-loading">Couldn't load users (${err.message}).</div>`;
+  }
+}
+
+function renderAdminUserList(users){
+  if(users.length === 0){
+    adminBody.innerHTML = `<div class="lb-loading">No users yet.</div>`;
+    return;
+  }
+  const list = document.createElement('div');
+  list.className = 'admin-user-list';
+  users.forEach(u=>{
+    const chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'admin-user-chip';
+    chip.innerHTML = `${u.username}${u.isAdmin ? ' 👑' : ''} <span class="count">${u.pickCount}</span>`;
+    chip.onclick = ()=> loadAdminUserPicks(u.id, u.username);
+    list.appendChild(chip);
+  });
+  adminBody.innerHTML = '';
+  adminBody.appendChild(list);
+}
+
+async function loadAdminUserPicks(userId, username){
+  adminStamp.textContent = `EDITING ${username.toUpperCase()}`;
+  adminBody.innerHTML = `<div class="lb-loading">Loading ${username}'s picks…</div>`;
+  try{
+    const { res, body } = await apiFetch(`/api/admin/users/${userId}/picks`);
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    renderAdminPickEditor(userId, username, body.picks || {});
+  }catch(err){
+    adminBody.innerHTML = `<div class="lb-loading">Couldn't load picks (${err.message}).</div>`;
+  }
+}
+
+function renderAdminPickEditor(userId, username, picks){
+  const entries = Object.entries(picks);
+
+  const backBtn = `<button class="admin-back-btn" id="adminBackBtn" type="button">← Back to all users</button>`;
+
+  if(entries.length === 0){
+    adminBody.innerHTML = `${backBtn}<div class="lb-loading">${username} has no saved picks.</div>`;
+    document.getElementById('adminBackBtn').onclick = loadAdminUserList;
+    return;
+  }
+
+  const rowsHtml = entries.map(([key, pick])=>`
+    <tr data-key="${key}">
+      <td>
+        <div class="admin-pick-game">${pick.gameSummary || ''}</div>
+        <div class="admin-pick-desc">${pick.pickLabel || ''} <span style="color:var(--gold);font-family:'IBM Plex Mono',monospace;">${pick.priceText || ''}</span></div>
+      </td>
+      <td><input class="admin-input" type="number" min="0.25" step="0.25" value="${Number(pick.units) || 1}" data-field="units"></td>
+      <td>
+        <select class="admin-select" data-field="status">
+          ${['pending','win','loss','push'].map(s=>`<option value="${s}" ${pick.status===s?'selected':''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-field="locked" ${pick.locked ? 'checked' : ''}></td>
+      <td><button class="admin-row-delete" type="button" data-action="delete">Delete</button></td>
+    </tr>
+  `).join('');
+
+  adminBody.innerHTML = `
+    ${backBtn}
+    <table class="admin-editor-table">
+      <thead><tr><th>Pick</th><th>Units</th><th>Status</th><th>Locked</th><th></th></tr></thead>
+      <tbody id="adminEditorBody">${rowsHtml}</tbody>
+    </table>
+    <div class="admin-save-bar">
+      <span class="admin-save-status" id="adminSaveStatus"></span>
+      <button class="admin-save-btn" id="adminSaveBtn" type="button">Save changes</button>
+    </div>
+  `;
+
+  document.getElementById('adminBackBtn').onclick = loadAdminUserList;
+
+  // Deleting a row here removes it from the DOM immediately; the actual
+  // removal is only persisted when "Save changes" is clicked, same as
+  // every other edit in this table.
+  adminBody.querySelectorAll('[data-action="delete"]').forEach(btn=>{
+    btn.onclick = ()=>{
+      const row = btn.closest('tr');
+      if(confirm('Delete this pick? This bypasses the normal kickoff lock and can\'t be undone once saved.')){
+        row.remove();
+      }
+    };
+  });
+
+  document.getElementById('adminSaveBtn').onclick = async ()=>{
+    const updatedPicks = {};
+    adminBody.querySelectorAll('#adminEditorBody tr').forEach(row=>{
+      const key = row.dataset.key;
+      const original = picks[key] || {};
+      const unitsVal = parseFloat(row.querySelector('[data-field="units"]').value);
+      const statusVal = row.querySelector('[data-field="status"]').value;
+      const lockedVal = row.querySelector('[data-field="locked"]').checked;
+      updatedPicks[key] = {
+        ...original,
+        units: Number.isFinite(unitsVal) && unitsVal > 0 ? unitsVal : 1,
+        status: statusVal,
+        locked: lockedVal,
+      };
+    });
+
+    const statusEl = document.getElementById('adminSaveStatus');
+    statusEl.textContent = 'Saving…';
+    try{
+      const { res, body } = await apiFetch(`/api/admin/users/${userId}/picks`, {
+        method: 'PUT',
+        body: JSON.stringify({ picks: updatedPicks }),
+      });
+      if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+      statusEl.textContent = 'Saved.';
+      setTimeout(()=> loadAdminUserPicks(userId, username), 600);
+    }catch(err){
+      statusEl.textContent = `Failed to save: ${err.message}`;
+    }
+  };
+}
 
 function renderSavedBets(){
   if(!savedBody) return; // not booted yet

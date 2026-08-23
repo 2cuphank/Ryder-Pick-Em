@@ -9,6 +9,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const RUNDOWN_KEY = process.env.RUNDOWN_API_KEY;
 const SESSION_SECRET = process.env.SESSION_SECRET;
+// Whichever account signs up or logs in with this username is granted
+// admin rights (persisted on the user record from then on). Set this in
+// your host's environment variables, not in code.
+const ADMIN_USERNAME = process.env.ADMIN_USERNAME || null;
 
 const SPORT_ID = 1;                 // NCAAF, per TheRundown's sport ID reference
 const DRAFTKINGS_AFFILIATE_ID = '19'; // DraftKings, per TheRundown's affiliate ID reference
@@ -96,7 +100,19 @@ function verifyPassword(password, salt, expectedHash) {
 }
 
 function publicUser(user) {
-  return { id: user.id, username: user.username };
+  return { id: user.id, username: user.username, isAdmin: !!user.isAdmin };
+}
+
+// If ADMIN_USERNAME is set and this account's username matches it, grant
+// (and permanently persist) admin rights. Called on both signup and every
+// login so setting/changing the env var takes effect the next time that
+// person logs in, without needing to touch the data file by hand.
+function maybeGrantAdmin(user) {
+  if (ADMIN_USERNAME && !user.isAdmin && user.username.toLowerCase() === ADMIN_USERNAME.toLowerCase()) {
+    user.isAdmin = true;
+    return true;
+  }
+  return false;
 }
 
 // --- Graded events (cached final scores) --------------------------------
@@ -642,6 +658,7 @@ app.post('/api/auth/signup', (req, res) => {
     picks: {},
     createdAt: new Date().toISOString(),
   };
+  maybeGrantAdmin(user);
   users.push(user);
   writeUsers(users);
 
@@ -662,6 +679,8 @@ app.post('/api/auth/login', (req, res) => {
     return res.status(401).json({ ok: false, error: 'Incorrect username or password.' });
   }
 
+  if (maybeGrantAdmin(user)) writeUsers(users);
+
   req.session.userId = user.id;
   res.json({ ok: true, user: publicUser(user) });
 });
@@ -675,11 +694,20 @@ app.get('/api/auth/me', (req, res) => {
   const users = readUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (!user) return res.json({ ok: true, user: null });
+  if (maybeGrantAdmin(user)) writeUsers(users);
   res.json({ ok: true, user: publicUser(user) });
 });
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ ok: false, error: 'Not logged in.' });
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.userId) return res.status(401).json({ ok: false, error: 'Not logged in.' });
+  const users = readUsers();
+  const user = users.find(u => u.id === req.session.userId);
+  if (!user || !user.isAdmin) return res.status(403).json({ ok: false, error: 'Admin access required.' });
   next();
 }
 
@@ -726,6 +754,50 @@ app.put('/api/picks', requireAuth, (req, res) => {
   }
 
   res.json({ ok: true, picks: merged });
+});
+
+// --- Admin (edit/delete anyone's picks) ---------------------------------
+
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = readUsers();
+  const rows = users
+    .map(u => ({
+      id: u.id,
+      username: u.username,
+      isAdmin: !!u.isAdmin,
+      pickCount: Object.keys(u.picks || {}).length,
+    }))
+    .sort((a, b) => a.username.localeCompare(b.username));
+  res.json({ ok: true, users: rows });
+});
+
+app.get('/api/admin/users/:userId/picks', requireAdmin, (req, res) => {
+  const users = readUsers();
+  const user = users.find(u => u.id === req.params.userId);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
+  res.json({ ok: true, username: user.username, picks: user.picks || {} });
+});
+
+app.put('/api/admin/users/:userId/picks', requireAdmin, (req, res) => {
+  const { picks } = req.body || {};
+  if (typeof picks !== 'object' || picks === null || Array.isArray(picks)) {
+    return res.status(400).json({ ok: false, error: '"picks" must be an object.' });
+  }
+
+  const users = readUsers();
+  const idx = users.findIndex(u => u.id === req.params.userId);
+  if (idx === -1) return res.status(404).json({ ok: false, error: 'User not found.' });
+
+  // Intentionally no kickoff-based delete protection here, unlike the
+  // regular /api/picks route — that restriction exists to stop a user from
+  // quietly editing their own settled record, not to stop an admin fixing
+  // a mistake (a bad auto-grade, a duplicate pick, a typo'd unit size, etc).
+  const adminUser = users.find(u => u.id === req.session.userId);
+  console.log(`[admin] ${adminUser ? adminUser.username : 'unknown admin'} edited picks for user ${users[idx].username}`);
+
+  users[idx].picks = picks;
+  writeUsers(users);
+  res.json({ ok: true, picks: users[idx].picks });
 });
 
 // --- Leaderboard (public — no login needed to view) ---------------------
