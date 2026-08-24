@@ -3,18 +3,39 @@
 A college football odds board — DraftKings lines only, via [TheRundown API](https://therundown.io/) —
 with save-able selections. The API key lives only in `.env` on the server; the browser never sees it.
 
+## Admin account
+
+- Set `ADMIN_USERNAME` in your environment (Render dashboard, `.env` locally, etc.) to the exact username
+  of the account that should have admin rights. That account gets admin access automatically the next time
+  it signs up or logs in — no separate command needed, and the flag persists on that user record from then
+  on (even if you later unset or change `ADMIN_USERNAME`, that account stays admin unless manually edited
+  directly in the Redis database).
+- Admins see an **"Admin"** tab (hidden for everyone else) with a list of every user and their pick count.
+  Selecting a user opens an editable table of their saved picks — units, status (pending/win/loss/push),
+  locked state, and a delete button per pick, with a **"Save changes"** button that writes everything at
+  once.
+- Unlike a normal user editing their own picks, the admin editor **bypasses the kickoff-lock delete
+  protection** — that restriction exists to stop a user from quietly altering their own settled record, not
+  to stop an admin fixing a mistake (a bad auto-grade, a duplicate pick, a typo'd unit size, etc). Every
+  admin edit is logged server-side (who edited whose picks) for accountability.
+- The leaderboard recalculates from whatever's currently saved, so any admin edit is reflected there on the
+  next load — no separate step needed.
+
 ## Accounts & saved picks
 
 - Click **"Log in to save picks"** in the header to sign up or log in — usernames and passwords only, no
-  email required. Passwords are hashed with Node's built-in `scrypt` (never stored in plain text) and kept
-  in `data/users.json`, a local file (not committed — see `.gitignore`).
+  email required. Passwords are hashed with Node's built-in `scrypt` (never stored in plain text) and kept,
+  along with every account's saved picks, in a free [Upstash](https://upstash.com) Redis database — see
+  `DEPLOY.md` for setup. Nothing account-related is stored in local files anymore, so there's no persistent
+  disk to worry about on whatever host you deploy to.
 - Logged out (**guest mode**), tapped picks still save fine — to that browser only, via `localStorage` —
   but they can't be "saved to profile" (locked into your record) until you log in.
 - Logging in **merges** anything you'd already picked as a guest on that browser into your account, then
   clears the guest copy. From then on, saves go to your account and follow you to any device you log into.
 - Sessions are cookie-based (`express-session`) and last 30 days, stored in memory — they reset if you
-  restart the server. That's fine for personal/local use; for anything longer-lived or multi-instance, swap
-  in a real session store (e.g. `connect-redis`) and a real database instead of the JSON file.
+  restart the server (you'll need to log in again, but your account and picks are untouched, since those
+  live in Redis). That's fine for personal/small-group use; for a multi-instance deploy, swap in a real
+  session store (e.g. `connect-redis`, which pairs naturally with the Redis database already in use here).
 - Set `SESSION_SECRET` in `.env` to a random string (the server will warn you and use an insecure default
   if you don't). Changing it later invalidates all existing sessions.
 
@@ -123,8 +144,8 @@ gridiron-odds-app/
   at the top, so it never just looks broken.
 - Kickoff times display as "Time TBD" if TheRundown's response for a given event doesn't include a
   recognizable date/time field — the rest of the odds still render normally.
-- Guest selections are stored in the browser only; logged-in picks are stored server-side in
-  `data/users.json` and follow you across devices.
-- **Deploying this on the internet?** See [`DEPLOY.md`](./DEPLOY.md) — the short version is you need
-  persistent storage for the `data/` folder (most hosts wipe local files on redeploy), and `DATA_DIR` in
-  `server.js` is configurable via env var specifically to make that easy.
+- Guest selections are stored in the browser only; logged-in picks are stored server-side in a free
+  Upstash Redis database and follow you across devices.
+- **Deploying this on the internet?** See [`DEPLOY.md`](./DEPLOY.md) — the short version is: create a free
+  Upstash Redis database, set its two REST credentials as env vars, and the app can run on any host's free
+  compute tier with no persistent disk needed at all.

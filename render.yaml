@@ -2,17 +2,17 @@ services:
   - type: web
     name: ryder-pick-em
     runtime: node
-    plan: starter          # smallest always-on tier; verify current pricing on Render's site
+    plan: free              # no disk needed anymore — data lives in Upstash Redis, not local files
     buildCommand: npm install
     startCommand: npm start
     envVars:
       - key: RUNDOWN_API_KEY
-        sync: false         # you'll paste the real value in the Render dashboard, not here
+        sync: false          # paste the real value in the Render dashboard, not here
       - key: SESSION_SECRET
-        sync: false         # same — paste a random string in the dashboard
-      - key: DATA_DIR
-        value: /var/data
-    disk:
-      name: data
-      mountPath: /var/data
-      sizeGB: 1
+        sync: false          # paste a random string in the dashboard
+      - key: UPSTASH_REDIS_REST_URL
+        sync: false          # from your Upstash database's REST API section
+      - key: UPSTASH_REDIS_REST_TOKEN
+        sync: false          # same — treat it like a password
+      - key: ADMIN_USERNAME
+        sync: false          # optional — the username that should get admin rights

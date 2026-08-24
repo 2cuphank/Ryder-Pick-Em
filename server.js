@@ -1,9 +1,9 @@
 require('dotenv').config();
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
 const crypto = require('crypto');
 const session = require('express-session');
+const { Redis } = require('@upstash/redis');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -58,33 +58,57 @@ app.use(session({
 // Serve the frontend (public/index.html and friends)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- User accounts ---------------------------------------------------
-// Stored in a local JSON file rather than a database — simple, no extra
-// dependency, fine for a personal/local-use app. Passwords are hashed
-// with Node's built-in scrypt (no native module to compile), never
-// stored or logged in plain text.
-// Configurable so a hosting platform's persistent disk (mounted somewhere
-// like /var/data) can be pointed at without editing code — see DEPLOY.md.
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const USERS_FILE = path.join(DATA_DIR, 'users.json');
+// --- Database (Upstash Redis) -------------------------------------------
+// All app data (accounts, saved picks, cached final scores) lives in a
+// free Upstash Redis database rather than local files — this means the
+// app runs entirely on Render's free web-service tier with no persistent
+// disk needed at all. Talks over plain HTTPS (Upstash's REST API), so it
+// works from any host without a persistent TCP connection.
+const redis = (process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+  ? new Redis({
+      url: process.env.UPSTASH_REDIS_REST_URL,
+      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+    })
+  : null;
 
-function ensureUsersFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(USERS_FILE)) fs.writeFileSync(USERS_FILE, JSON.stringify({ users: [] }, null, 2));
+if (!redis) {
+  console.warn(
+    '\n[warning] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set.\n' +
+    'Create a free database at upstash.com and add both values to .env — see DEPLOY.md.\n' +
+    'Without them, accounts and saved picks will not persist.\n'
+  );
 }
-ensureUsersFile();
 
-function readUsers() {
+// Wraps every route handler (and the one async middleware, requireAdmin)
+// so a rejected promise becomes a clean 500 response instead of a hung
+// request or an unhandled rejection crashing the process.
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(err => {
+      console.error('Unhandled error in route:', err);
+      if (!res.headersSent) res.status(500).json({ ok: false, error: 'Internal server error.' });
+    });
+  };
+}
+
+// --- User accounts ---------------------------------------------------
+// Passwords are hashed with Node's built-in scrypt (no native module to
+// compile), never stored or logged in plain text.
+
+async function readUsers() {
+  if (!redis) return [];
   try {
-    return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8')).users || [];
+    const data = await redis.get('users');
+    return Array.isArray(data) ? data : [];
   } catch (err) {
-    console.error('Could not read users.json, starting with an empty user list:', err.message);
+    console.error('Could not read users from the database, treating as empty:', err.message);
     return [];
   }
 }
 
-function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify({ users }, null, 2));
+async function writeUsers(users) {
+  if (!redis) throw new Error('No database configured — set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN.');
+  await redis.set('users', users);
 }
 
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -119,26 +143,25 @@ function maybeGrantAdmin(user) {
 // Once a game is confirmed final, its score is cached here permanently so
 // grading never has to re-fetch it — saves API quota and respects the rate
 // limit on repeat leaderboard loads.
-const GRADED_EVENTS_FILE = path.join(DATA_DIR, 'graded-events.json');
 
-function ensureGradedEventsFile() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-  if (!fs.existsSync(GRADED_EVENTS_FILE)) fs.writeFileSync(GRADED_EVENTS_FILE, JSON.stringify({ events: {} }, null, 2));
-}
-ensureGradedEventsFile();
-
-function readGradedEvents() {
+async function readGradedEvents() {
+  if (!redis) return { events: {} };
   try {
-    const parsed = JSON.parse(fs.readFileSync(GRADED_EVENTS_FILE, 'utf8'));
-    return parsed.events ? parsed : { events: {} };
+    const data = await redis.get('graded_events');
+    return (data && data.events) ? data : { events: {} };
   } catch (err) {
-    console.error('Could not read graded-events.json, starting fresh:', err.message);
+    console.error('Could not read graded events from the database, starting fresh:', err.message);
     return { events: {} };
   }
 }
 
-function writeGradedEvents(data) {
-  fs.writeFileSync(GRADED_EVENTS_FILE, JSON.stringify(data, null, 2));
+async function writeGradedEvents(data) {
+  if (!redis) return; // non-fatal — grading cache is a nice-to-have, not required
+  try {
+    await redis.set('graded_events', data);
+  } catch (err) {
+    console.error('Could not write graded events to the database:', err.message);
+  }
 }
 
 // In-memory cache so repeated page loads don't burn through your prepaid
@@ -540,8 +563,8 @@ function gradePickOutcome(pick, score) {
 // the rate limit), caches any that are final, then applies every cached
 // score to matching pending picks across all users.
 async function runGradingSweep() {
-  const users = readUsers();
-  const gradedEvents = readGradedEvents();
+  const users = await readUsers();
+  const gradedEvents = await readGradedEvents();
   const now = Date.now();
 
   const pendingGameIds = new Set();
@@ -572,7 +595,7 @@ async function runGradingSweep() {
     }
   }
 
-  if (toFetch.length > 0) writeGradedEvents(gradedEvents);
+  if (toFetch.length > 0) await writeGradedEvents(gradedEvents);
 
   // Apply every cached final score (from this sweep or earlier ones) to
   // any matching pending pick that hasn't been settled yet.
@@ -590,7 +613,7 @@ async function runGradingSweep() {
       }
     });
   });
-  if (changed) writeUsers(users);
+  if (changed) await writeUsers(users);
 
   return users;
 }
@@ -630,7 +653,7 @@ function computeLeaderboard(users) {
 
 // --- Auth routes -------------------------------------------------------
 
-app.post('/api/auth/signup', (req, res) => {
+app.post('/api/auth/signup', asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   const cleanUsername = String(username || '').trim();
 
@@ -644,7 +667,7 @@ app.post('/api/auth/signup', (req, res) => {
     return res.status(400).json({ ok: false, error: 'Password must be at least 8 characters.' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   if (users.some(u => u.username.toLowerCase() === cleanUsername.toLowerCase())) {
     return res.status(409).json({ ok: false, error: 'That username is already taken.' });
   }
@@ -660,73 +683,73 @@ app.post('/api/auth/signup', (req, res) => {
   };
   maybeGrantAdmin(user);
   users.push(user);
-  writeUsers(users);
+  await writeUsers(users);
 
   req.session.userId = user.id;
   res.json({ ok: true, user: publicUser(user) });
-});
+}));
 
-app.post('/api/auth/login', (req, res) => {
+app.post('/api/auth/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body || {};
   if (!username || !password) {
     return res.status(400).json({ ok: false, error: 'Username and password are required.' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => u.username.toLowerCase() === String(username).trim().toLowerCase());
 
   if (!user || !verifyPassword(password, user.salt, user.hash)) {
     return res.status(401).json({ ok: false, error: 'Incorrect username or password.' });
   }
 
-  if (maybeGrantAdmin(user)) writeUsers(users);
+  if (maybeGrantAdmin(user)) await writeUsers(users);
 
   req.session.userId = user.id;
   res.json({ ok: true, user: publicUser(user) });
-});
+}));
 
 app.post('/api/auth/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
 });
 
-app.get('/api/auth/me', (req, res) => {
+app.get('/api/auth/me', asyncHandler(async (req, res) => {
   if (!req.session.userId) return res.json({ ok: true, user: null });
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (!user) return res.json({ ok: true, user: null });
-  if (maybeGrantAdmin(user)) writeUsers(users);
+  if (maybeGrantAdmin(user)) await writeUsers(users);
   res.json({ ok: true, user: publicUser(user) });
-});
+}));
 
 function requireAuth(req, res, next) {
   if (!req.session.userId) return res.status(401).json({ ok: false, error: 'Not logged in.' });
   next();
 }
 
-function requireAdmin(req, res, next) {
+const requireAdmin = asyncHandler(async (req, res, next) => {
   if (!req.session.userId) return res.status(401).json({ ok: false, error: 'Not logged in.' });
-  const users = readUsers();
+  const users = await readUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (!user || !user.isAdmin) return res.status(403).json({ ok: false, error: 'Admin access required.' });
   next();
-}
+});
 
 // --- Saved picks (per account) -----------------------------------------
 
-app.get('/api/picks', requireAuth, (req, res) => {
-  const users = readUsers();
+app.get('/api/picks', requireAuth, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = users.find(u => u.id === req.session.userId);
   if (!user) return res.status(401).json({ ok: false, error: 'Not logged in.' });
   res.json({ ok: true, picks: user.picks || {} });
-});
+}));
 
-app.put('/api/picks', requireAuth, (req, res) => {
+app.put('/api/picks', requireAuth, asyncHandler(async (req, res) => {
   const { picks: incoming } = req.body || {};
   if (typeof incoming !== 'object' || incoming === null || Array.isArray(incoming)) {
     return res.status(400).json({ ok: false, error: '"picks" must be an object.' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const idx = users.findIndex(u => u.id === req.session.userId);
   if (idx === -1) return res.status(401).json({ ok: false, error: 'Not logged in.' });
 
@@ -747,19 +770,19 @@ app.put('/api/picks', requireAuth, (req, res) => {
   });
 
   users[idx].picks = merged;
-  writeUsers(users);
+  await writeUsers(users);
 
   if (restored > 0) {
     console.warn(`Blocked deletion of ${restored} saved pick(s) past kickoff for user ${users[idx].username}`);
   }
 
   res.json({ ok: true, picks: merged });
-});
+}));
 
 // --- Admin (edit/delete anyone's picks) ---------------------------------
 
-app.get('/api/admin/users', requireAdmin, (req, res) => {
-  const users = readUsers();
+app.get('/api/admin/users', requireAdmin, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const rows = users
     .map(u => ({
       id: u.id,
@@ -769,22 +792,22 @@ app.get('/api/admin/users', requireAdmin, (req, res) => {
     }))
     .sort((a, b) => a.username.localeCompare(b.username));
   res.json({ ok: true, users: rows });
-});
+}));
 
-app.get('/api/admin/users/:userId/picks', requireAdmin, (req, res) => {
-  const users = readUsers();
+app.get('/api/admin/users/:userId/picks', requireAdmin, asyncHandler(async (req, res) => {
+  const users = await readUsers();
   const user = users.find(u => u.id === req.params.userId);
   if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
   res.json({ ok: true, username: user.username, picks: user.picks || {} });
-});
+}));
 
-app.put('/api/admin/users/:userId/picks', requireAdmin, (req, res) => {
+app.put('/api/admin/users/:userId/picks', requireAdmin, asyncHandler(async (req, res) => {
   const { picks } = req.body || {};
   if (typeof picks !== 'object' || picks === null || Array.isArray(picks)) {
     return res.status(400).json({ ok: false, error: '"picks" must be an object.' });
   }
 
-  const users = readUsers();
+  const users = await readUsers();
   const idx = users.findIndex(u => u.id === req.params.userId);
   if (idx === -1) return res.status(404).json({ ok: false, error: 'User not found.' });
 
@@ -796,9 +819,9 @@ app.put('/api/admin/users/:userId/picks', requireAdmin, (req, res) => {
   console.log(`[admin] ${adminUser ? adminUser.username : 'unknown admin'} edited picks for user ${users[idx].username}`);
 
   users[idx].picks = picks;
-  writeUsers(users);
+  await writeUsers(users);
   res.json({ ok: true, picks: users[idx].picks });
-});
+}));
 
 // --- Leaderboard (public — no login needed to view) ---------------------
 
