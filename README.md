@@ -68,26 +68,34 @@ with save-able selections. The API key lives only in `.env` on the server; the b
   slip (only picks you haven't saved yet can be cleared with "Clear unsaved selections").
 - Saving requires being logged in — if you click it as a guest, the login/signup modal opens instead.
 - Once a saved pick's game has had a few hours to finish, the server checks its final score (see "Grading"
-  below) and marks it **win**, **loss**, or **push** — you'll see this reflected as a badge on the ticket
-  and in the Leaderboard tab.
+  below) and marks it **win**, **loss**, or **push**.
+- **Graded picks disappear from the bet slip automatically** — once a saved pick settles, it moves out of
+  the active slip (which only ever shows unsaved picks and still-pending saved ones) and lives from then on
+  in the **Saved Bets** tab and the leaderboard. Nothing is deleted, it just stops cluttering the working
+  slip once there's nothing left to do with it.
 
 ### Grading
 
 - `server.js` grades picks by fetching `GET /api/v2/events/{id}` for a saved pick's game once enough time
   has passed since kickoff, and comparing the final score against the pick's market/side/point.
-- Final scores are cached permanently in `data/graded-events.json` so a finished game is never re-fetched.
+- Final scores are cached permanently in the Redis database so a finished game is never re-fetched.
 - To respect the same strict rate limit as the odds board, each `/api/leaderboard` request grades at most
-  a handful of newly-eligible games (`MAX_EVENTS_TO_GRADE_PER_REQUEST` in `server.js`), spaced out
-  (`GRADE_EVENT_SPACING_MS`). If you have a lot of picks awaiting grading, it may take a couple of
-  leaderboard loads for everything to settle — that's expected, not a bug.
+  a handful of newly-eligible games (`MAX_EVENTS_TO_GRADE_PER_REQUEST` in `server.js`), spaced out by the
+  same global gate the odds board uses. If you have a lot of picks awaiting grading, it may take a couple
+  of leaderboard loads for everything to settle — that's expected, not a bug.
 
 ### Leaderboard
 
 - Public — anyone can view it, no login required (only *saving* picks requires an account).
 - Shows each user's record (win-loss, plus pushes if any), win percentage, and total units up/down.
+- **Sorted by win percentage** (highest first; users with no decided games yet sink to the bottom), with
+  total units as the tiebreaker when two users are tied on percentage.
 - Units up/down account for the odds: a win at `+150` returns more than a win at `-110` on the same stake;
   a loss always costs exactly the units risked; a push is a wash. Only users with at least one **settled**
   (graded) pick appear.
+- **Click any username** to open a read-only view of that person's picks, split into Pending and Graded —
+  backed by a public `GET /api/users/:userId/picks` endpoint that only ever exposes *saved* picks, never
+  anyone's unsaved slip contents.
 
 ## How it's structured
 

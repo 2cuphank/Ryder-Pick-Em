@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Ryder Pick 'Em — College Football Board</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Anton&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -37,6 +37,9 @@
   /* ---------- Marquee header ---------- */
   header{
     padding:28px 20px 18px;
+    padding-top:max(28px, calc(env(safe-area-inset-top) + 12px));
+    padding-left:max(20px, env(safe-area-inset-left));
+    padding-right:max(20px, env(safe-area-inset-right));
     border-bottom:1px solid var(--line);
     position:sticky;top:0;z-index:20;
     background:rgba(11,16,13,0.92);
@@ -114,6 +117,20 @@
     box-shadow:0 20px 60px rgba(0,0,0,0.5);
   }
   .modal-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;}
+  .profile-modal{max-width:480px;max-height:80vh;display:flex;flex-direction:column;}
+  .profile-modal-title{font-family:'Anton',sans-serif;font-weight:400;font-size:19px;text-transform:uppercase;letter-spacing:.5px;margin:0;}
+  #profileModalBody{overflow-y:auto;flex:1;}
+  .lb-username-btn{
+    background:none;border:none;color:var(--text);font-weight:600;font-size:14px;
+    cursor:pointer;padding:0;font-family:'Inter',sans-serif;text-align:left;
+    text-decoration:underline;text-decoration-color:transparent;transition:text-decoration-color .15s ease;
+  }
+  .lb-username-btn:hover{text-decoration-color:var(--gold);color:var(--gold);}
+  .profile-section-label{
+    font-size:11px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.6px;
+    margin:16px 0 8px;font-weight:600;
+  }
+  .profile-section-label:first-child{margin-top:0;}
   .auth-tabs{display:flex;gap:6px;background:var(--surface);border-radius:8px;padding:4px;}
   .auth-tab{
     background:transparent;border:none;color:var(--text-dim);
@@ -150,7 +167,8 @@
   .notice .dot{color:var(--gold);flex-shrink:0;margin-top:2px;}
 
   /* ---------- View tabs (Board / Leaderboard) ---------- */
-  .view-tabs{display:flex;gap:8px;margin:26px 0 0;}
+  .view-tabs{display:flex;gap:8px;margin:26px 0 0;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:1px;}
+  .view-tab{flex-shrink:0;}
   .view-tab{
     font-family:'Anton',sans-serif;font-size:14px;letter-spacing:.5px;text-transform:uppercase;
     background:transparent;border:1px solid var(--line);color:var(--text-dim);
@@ -242,9 +260,11 @@
     z-index:30;display:flex;flex-direction:column;
     transform:translateX(0);
     box-shadow:-20px 0 40px rgba(0,0,0,0.35);
+    padding-right:env(safe-area-inset-right);
   }
   .slip-head{
     padding:20px 18px 14px;border-bottom:1px dashed var(--line);
+    padding-top:max(20px, calc(env(safe-area-inset-top) + 8px));
     display:flex;justify-content:space-between;align-items:center;
   }
   .slip-head h3{font-family:'Anton',sans-serif;font-weight:400;font-size:18px;text-transform:uppercase;margin:0;letter-spacing:.5px;}
@@ -293,6 +313,7 @@
 
   .slip-foot{
     border-top:1px dashed var(--line);padding:14px 18px 18px;
+    padding-bottom:max(18px, calc(env(safe-area-inset-bottom) + 10px));
   }
   .slip-stat{display:flex;justify-content:space-between;font-size:12.5px;color:var(--text-dim);margin-bottom:4px;font-family:'IBM Plex Mono',monospace;}
   .save-btn{
@@ -417,6 +438,42 @@
   @media (max-width:520px){
     .markets{grid-template-columns:1fr;}
   }
+
+  /* ---------- Phone-sized screens (iPhone SE up through Pro Max) ---------- */
+  @media (max-width:480px){
+    /* iOS Safari auto-zooms the whole page when a focused input's font is
+       under 16px — this is the single biggest iPhone-specific annoyance,
+       so it overrides every input/select on the page at this width. */
+    input, select, textarea{font-size:16px !important;}
+    .units-input{width:64px;padding:7px 6px;}
+    .admin-input{width:64px;}
+
+    .wrap{padding-left:14px;padding-right:14px;}
+    header{padding-left:max(14px, env(safe-area-inset-left));padding-right:max(14px, env(safe-area-inset-right));}
+
+    h1{font-size:22px;}
+    .tag{font-size:10px;}
+    .brand-mark{width:32px;height:32px;font-size:17px;}
+
+    /* Bigger tap targets throughout — Apple's HIG minimum is 44x44pt */
+    .view-tab{padding:11px 16px;font-size:13px;}
+    .week-btn{padding:10px 14px;}
+    .odds-btn{padding:12px 6px;}
+    .ticket-remove{padding:8px 4px;font-size:15px;}
+    .clear-btn, .save-btn, .admin-save-btn{padding:13px;}
+    .saved-delete-btn{padding:9px 14px;}
+    .logout-btn{padding:8px 4px;}
+    .auth-btn{padding:11px 14px;}
+
+    /* Wide tables scroll horizontally instead of squeezing illegibly */
+    .lb-table, .admin-editor-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
+    .lb-table thead, .admin-editor-table thead{display:table-header-group;}
+    .lb-table tbody, .admin-editor-table tbody{display:table-row-group;}
+
+    .modal{padding:18px;}
+    .saved-card{flex-direction:column;align-items:stretch;gap:10px;}
+    .saved-card-right{justify-content:space-between;}
+  }
 </style>
 </head>
 <body>
@@ -457,6 +514,16 @@
       <button class="auth-submit" id="authSubmit" type="submit">Log in</button>
     </form>
     <div class="auth-hint" id="authHint">Your saved selections on this browser will carry over to your account.</div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="profileBackdrop">
+  <div class="modal profile-modal" id="profileModal">
+    <div class="modal-head">
+      <h3 class="profile-modal-title" id="profileModalTitle">Picks</h3>
+      <button class="modal-close" id="profileModalClose" type="button">✕</button>
+    </div>
+    <div id="profileModalBody"></div>
   </div>
 </div>
 
@@ -682,11 +749,19 @@ function americanToDecimal(str){
 }
 
 function combinedPriceLabel(){
-  const list = Object.values(selections);
+  const list = activeSlipSelections();
   if(list.length === 0) return '—';
   const dec = list.reduce((acc,s)=> acc * americanToDecimal(s.priceText), 1);
   const americanEq = dec >= 2 ? Math.round((dec-1)*100) : Math.round(-100/(dec-1));
   return (americanEq > 0 ? '+' : '') + americanEq + `  (${dec.toFixed(2)}x)`;
+}
+
+// Once a pick is graded (win/loss/push), it's done — it stays visible in
+// Saved Bets and counts toward the leaderboard, but there's no reason to
+// keep it cluttering the working bet slip. The slip only ever shows
+// picks that are still "in play": unsaved, or saved-and-still-pending.
+function activeSlipSelections(){
+  return Object.values(selections).filter(s => !s.locked || s.status === 'pending');
 }
 
 function render(){
@@ -817,7 +892,7 @@ async function deletePick(key, { confirmFirst } = {}){
 }
 
 function renderSlip(){
-  const list = Object.values(selections);
+  const list = activeSlipSelections();
   slipCountBadge.textContent = list.length;
   slipStatCount.textContent = list.length;
   slipStatPrice.textContent = combinedPriceLabel();
@@ -829,7 +904,10 @@ function renderSlip(){
     : 'Log in to save picks';
 
   if(list.length === 0){
-    slipBody.innerHTML = `<div class="slip-empty"><span class="glyph">🎟</span>No selections yet.<br>Tap any line on the board to save it here.</div>`;
+    const gradedCount = Object.values(selections).filter(s => s.locked && s.status !== 'pending').length;
+    slipBody.innerHTML = gradedCount > 0
+      ? `<div class="slip-empty"><span class="glyph">🎟</span>No active picks.<br>Graded picks have moved to <b>Saved Bets</b>.</div>`
+      : `<div class="slip-empty"><span class="glyph">🎟</span>No selections yet.<br>Tap any line on the board to save it here.</div>`;
     return;
   }
 
@@ -1099,6 +1177,76 @@ tabLogin.onclick = ()=> setAuthMode('login');
 tabSignup.onclick = ()=> setAuthMode('signup');
 document.getElementById('authModalClose').onclick = closeAuthModal;
 authBackdrop.onclick = (e)=>{ if(e.target === authBackdrop) closeAuthModal(); };
+
+/* ========================= Profile modal (view anyone's picks from the leaderboard) ========================= */
+const profileBackdrop = document.getElementById('profileBackdrop');
+const profileModalTitle = document.getElementById('profileModalTitle');
+const profileModalBody = document.getElementById('profileModalBody');
+
+function closeProfileModal(){
+  profileBackdrop.classList.remove('open');
+}
+document.getElementById('profileModalClose').onclick = closeProfileModal;
+profileBackdrop.onclick = (e)=>{ if(e.target === profileBackdrop) closeProfileModal(); };
+
+async function openProfileModal(userId, username){
+  profileModalTitle.textContent = `${username}'s Picks`;
+  profileModalBody.innerHTML = `<div class="lb-loading">Loading…</div>`;
+  profileBackdrop.classList.add('open');
+
+  try{
+    const { res, body } = await apiFetch(`/api/users/${userId}/picks`);
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    renderProfilePicks(body.picks || {});
+  }catch(err){
+    profileModalBody.innerHTML = `<div class="lb-loading">Couldn't load picks (${err.message}).</div>`;
+  }
+}
+
+function renderProfilePicks(picks){
+  const list = Object.values(picks);
+  if(list.length === 0){
+    profileModalBody.innerHTML = `<div class="lb-loading">No saved picks yet.</div>`;
+    return;
+  }
+
+  const pending = list.filter(p => p.status === 'pending');
+  const settled = list.filter(p => p.status !== 'pending')
+    .sort((a,b)=> (b.settledAt || 0) > (a.settledAt || 0) ? 1 : -1);
+
+  function cardHtml(sel){
+    const profit = unitsProfitLabel(sel);
+    const badgeHtml = sel.status === 'pending'
+      ? `<span class="pick-badge pending">Pending</span>`
+      : `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+    return `
+      <div class="saved-card">
+        <div class="saved-card-main">
+          <div class="saved-card-game">${sel.gameSummary || ''}</div>
+          <div class="saved-card-pick">${sel.pickLabel || ''}</div>
+          <div class="saved-card-meta">
+            <span>${Number(sel.units) || 1}u</span>
+            ${badgeHtml}
+          </div>
+        </div>
+        <div class="saved-card-right">
+          <div class="saved-card-price">${sel.priceText || ''}</div>
+        </div>
+      </div>
+    `;
+  }
+
+  let html = '';
+  if(pending.length > 0){
+    html += `<div class="profile-section-label">Pending (${pending.length})</div>`;
+    html += pending.map(cardHtml).join('');
+  }
+  if(settled.length > 0){
+    html += `<div class="profile-section-label">Graded (${settled.length})</div>`;
+    html += settled.map(cardHtml).join('');
+  }
+  profileModalBody.innerHTML = html;
+}
 
 authForm.onsubmit = async (e)=>{
   e.preventDefault();
@@ -1396,7 +1544,7 @@ function renderLeaderboard(rows){
         ${rows.map((r,i)=>`
           <tr>
             <td>${i+1}</td>
-            <td>${r.username}</td>
+            <td><button class="lb-username-btn" type="button" data-user-id="${r.id}" data-username="${r.username}">${r.username}</button></td>
             <td>${r.wins}-${r.losses}${r.pushes ? '-' + r.pushes : ''}</td>
             <td>${r.winPct === null ? '—' : r.winPct.toFixed(1) + '%'}</td>
             <td class="${r.totalUnits > 0 ? 'lb-pos' : (r.totalUnits < 0 ? 'lb-neg' : '')}">${r.totalUnits > 0 ? '+' : ''}${r.totalUnits.toFixed(2)}u</td>
@@ -1405,6 +1553,9 @@ function renderLeaderboard(rows){
       </tbody>
     </table>
   `;
+  leaderboardBody.querySelectorAll('.lb-username-btn').forEach(btn=>{
+    btn.onclick = ()=> openProfileModal(btn.dataset.userId, btn.dataset.username);
+  });
 }
 
 /* ========================= Mobile slip open/close ========================= */

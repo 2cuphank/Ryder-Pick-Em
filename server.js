@@ -638,6 +638,7 @@ function computeLeaderboard(users) {
       });
       const decided = wins + losses;
       return {
+        id: user.id,
         username: user.username,
         wins, losses, pushes,
         winPct: decided > 0 ? (wins / decided) * 100 : null,
@@ -647,7 +648,14 @@ function computeLeaderboard(users) {
     })
     .filter(r => r.settledCount > 0);
 
-  rows.sort((a, b) => b.totalUnits - a.totalUnits);
+  // Sorted by win % first (no decided games sinks to the bottom), then by
+  // units as a tiebreaker for equal percentages.
+  rows.sort((a, b) => {
+    const aPct = a.winPct === null ? -1 : a.winPct;
+    const bPct = b.winPct === null ? -1 : b.winPct;
+    if (bPct !== aPct) return bPct - aPct;
+    return b.totalUnits - a.totalUnits;
+  });
   return rows;
 }
 
@@ -821,6 +829,22 @@ app.put('/api/admin/users/:userId/picks', requireAdmin, asyncHandler(async (req,
   users[idx].picks = picks;
   await writeUsers(users);
   res.json({ ok: true, picks: users[idx].picks });
+}));
+
+// --- Public profile (view anyone's saved picks from the leaderboard) ----
+// Read-only, no login required — matches the leaderboard's own visibility.
+// Only ever returns locked (saved) picks; anything still sitting unsaved
+// in someone's slip is never exposed here.
+
+app.get('/api/users/:userId/picks', asyncHandler(async (req, res) => {
+  const users = await readUsers();
+  const user = users.find(u => u.id === req.params.userId);
+  if (!user) return res.status(404).json({ ok: false, error: 'User not found.' });
+
+  const saved = Object.fromEntries(
+    Object.entries(user.picks || {}).filter(([, pick]) => pick.locked)
+  );
+  res.json({ ok: true, username: user.username, picks: saved });
 }));
 
 // --- Leaderboard (public — no login needed to view) ---------------------
