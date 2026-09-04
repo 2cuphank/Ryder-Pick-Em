@@ -1226,16 +1226,27 @@ async function openProfileModal(userId, username){
   }
 }
 
+// Tuesday that opens the "Week 0" game window (Saturday Aug 29, 2026) —
+// college football weeks conventionally run Tue-through-Mon, so bucketing
+// from this anchor in 7-day chunks lines up Thu/Fri/Sat/Sun games from the
+// same week together. Adjust this if a future season's Week 0 date shifts.
+const CFB_WEEK0_TUESDAY = '2026-08-25';
+
+function cfbWeekInfo(dateKey){
+  if(!dateKey) return null;
+  const anchor = new Date(CFB_WEEK0_TUESDAY + 'T00:00:00Z').getTime();
+  const d = new Date(dateKey + 'T00:00:00Z').getTime();
+  if(Number.isNaN(d)) return null;
+  const weekNum = Math.floor((d - anchor) / (7 * 24 * 60 * 60 * 1000));
+  return { weekNum, label: weekNum >= 0 ? `Week ${weekNum}` : 'Preseason' };
+}
+
 function renderProfilePicks(picks){
   const list = Object.values(picks);
   if(list.length === 0){
     profileModalBody.innerHTML = `<div class="lb-loading">No saved picks yet.</div>`;
     return;
   }
-
-  const pending = list.filter(p => p.status === 'pending');
-  const settled = list.filter(p => p.status !== 'pending')
-    .sort((a,b)=> (b.settledAt || 0) > (a.settledAt || 0) ? 1 : -1);
 
   function cardHtml(sel){
     const profit = unitsProfitLabel(sel);
@@ -1259,15 +1270,30 @@ function renderProfilePicks(picks){
     `;
   }
 
+  // Group by week (derived from each pick's game date) so pending and
+  // graded picks from the same week sit together — a pick against a
+  // sample/demo game (no real date attached) falls back to "Other".
+  const groups = {};
+  list.forEach(p=>{
+    const info = cfbWeekInfo(p.dateKey);
+    const label = info ? info.label : 'Other';
+    const sortKey = info ? info.weekNum : Infinity;
+    if(!groups[label]) groups[label] = { sortKey, picks: [] };
+    groups[label].picks.push(p);
+  });
+
+  const orderedLabels = Object.keys(groups).sort((a,b)=> groups[a].sortKey - groups[b].sortKey);
+
   let html = '';
-  if(pending.length > 0){
-    html += `<div class="profile-section-label">Pending (${pending.length})</div>`;
-    html += pending.map(cardHtml).join('');
-  }
-  if(settled.length > 0){
-    html += `<div class="profile-section-label">Graded (${settled.length})</div>`;
-    html += settled.map(cardHtml).join('');
-  }
+  orderedLabels.forEach(label=>{
+    const picksInWeek = groups[label].picks.slice().sort((a,b)=>{
+      const at = a.kickoffISO ? new Date(a.kickoffISO).getTime() : 0;
+      const bt = b.kickoffISO ? new Date(b.kickoffISO).getTime() : 0;
+      return at - bt;
+    });
+    html += `<div class="profile-section-label">${label} (${picksInWeek.length})</div>`;
+    html += picksInWeek.map(cardHtml).join('');
+  });
   profileModalBody.innerHTML = html;
 }
 
