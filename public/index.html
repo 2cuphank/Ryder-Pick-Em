@@ -1544,6 +1544,9 @@ function renderAdminPickEditor(userId, username, picks){
   };
 }
 
+let savedWeekGroups = {};   // label -> { sortKey, picks: [] }
+let savedActiveWeek = null; // currently selected tab label
+
 function renderSavedBets(){
   if(!savedBody) return; // not booted yet
 
@@ -1559,15 +1562,52 @@ function renderSavedBets(){
 
   if(saved.length === 0){
     savedStamp.textContent = '';
+    savedWeekGroups = {};
     savedBody.innerHTML = `<div class="lb-loading">No saved bets yet.<br>Tap a line on the board, then hit "Save picks to profile" in your bet slip.</div>`;
     return;
   }
 
   savedStamp.textContent = `${saved.length} SAVED`;
-  saved.sort((a,b)=> (b.placedAt || b.savedAt) - (a.placedAt || a.savedAt));
 
-  savedBody.innerHTML = '';
-  saved.forEach(sel=>{
+  // Same week-bucketing as the leaderboard profile view — a pick against
+  // a sample/demo game (no real date attached) falls back to "Other".
+  const groups = {};
+  saved.forEach(p=>{
+    const info = cfbWeekInfo(p.dateKey);
+    const label = info ? info.label : 'Other';
+    const sortKey = info ? info.weekNum : Infinity;
+    if(!groups[label]) groups[label] = { sortKey, picks: [] };
+    groups[label].picks.push(p);
+  });
+
+  savedWeekGroups = groups;
+  const orderedLabels = Object.keys(groups).sort((a,b)=> groups[a].sortKey - groups[b].sortKey);
+  // Keep whatever tab is already selected across re-renders (editing units,
+  // deleting a pick, etc); only fall back to the first week if that tab no
+  // longer exists (e.g. its last pick just got deleted) or none was set yet.
+  if(!savedActiveWeek || !groups[savedActiveWeek]){
+    savedActiveWeek = orderedLabels[0];
+  }
+  renderSavedWeekTabs(orderedLabels);
+}
+
+function renderSavedWeekTabs(orderedLabels){
+  const tabsHtml = orderedLabels.map(label => `
+    <button type="button" class="profile-week-tab${label === savedActiveWeek ? ' active' : ''}" data-label="${label}">
+      ${label} <span class="profile-week-tab-count">${savedWeekGroups[label].picks.length}</span>
+    </button>
+  `).join('');
+
+  const activePicks = (savedWeekGroups[savedActiveWeek]?.picks || []).slice()
+    .sort((a,b)=> (b.placedAt || b.savedAt) - (a.placedAt || a.savedAt));
+
+  savedBody.innerHTML = `
+    <div class="profile-week-tabs">${tabsHtml}</div>
+    <div class="saved-week-content"></div>
+  `;
+
+  const contentEl = savedBody.querySelector('.saved-week-content');
+  activePicks.forEach(sel=>{
     const card = document.createElement('div');
     card.className = 'saved-card';
 
@@ -1603,7 +1643,14 @@ function renderSavedBets(){
       deleteBtn.onclick = ()=> deletePick(sel.key, { confirmFirst: true });
     }
 
-    savedBody.appendChild(card);
+    contentEl.appendChild(card);
+  });
+
+  savedBody.querySelectorAll('.profile-week-tab').forEach(btn=>{
+    btn.onclick = ()=>{
+      savedActiveWeek = btn.dataset.label;
+      renderSavedWeekTabs(orderedLabels);
+    };
   });
 }
 
