@@ -354,16 +354,34 @@
   .lb-table th{
     text-align:left;font-size:10.5px;color:var(--text-faint);text-transform:uppercase;
     letter-spacing:.6px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;
+    white-space:nowrap;
   }
-  .lb-table td{padding:13px 14px;border-bottom:1px solid var(--line);font-size:14px;}
+  .lb-table td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;}
   .lb-table tr:last-child td{border-bottom:none;}
   .lb-table td:first-child{font-family:'IBM Plex Mono',monospace;color:var(--text-faint);width:36px;}
-  .lb-table td:nth-child(2){font-weight:600;}
-  .lb-table td:nth-child(3),.lb-table td:nth-child(4){font-family:'IBM Plex Mono',monospace;color:var(--text-dim);}
-  .lb-table td:last-child{font-family:'IBM Plex Mono',monospace;font-weight:700;text-align:right;}
+  .lb-table td:nth-child(2){font-weight:600;white-space:nowrap;}
+  .lb-table tr:nth-child(1) td:first-child{color:var(--gold);}
+
+  /* Per-week cells: compact record + units stacked, muted until it's the
+     row's own data (kept plain so a wide season's worth of weeks stays
+     scannable rather than competing visually with the Total columns). */
+  .lb-week-cell{text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
+  .lb-week-cell.lb-week-empty{color:var(--text-faint);}
+  .lb-week-record{font-size:12.5px;color:var(--text-dim);}
+  .lb-week-units{font-size:11px;margin-top:1px;}
+
+  /* Total columns: visually separated from the per-week columns with a
+     divider and a slightly raised background, since they're the summary
+     the leaderboard is ultimately sorted by. */
+  .lb-total-header, td.lb-total-record{border-left:1px solid var(--line);}
+  .lb-total-header{background:rgba(242,169,59,0.05);}
+  td.lb-total-record, td.lb-total-winpct, td.lb-total-units{
+    background:rgba(242,169,59,0.04);font-family:'IBM Plex Mono',monospace;
+  }
+  td.lb-total-record, td.lb-total-winpct{color:var(--text-dim);white-space:nowrap;}
+  td.lb-total-units{font-weight:700;text-align:right;white-space:nowrap;}
   .lb-pos{color:var(--win-green);}
   .lb-neg{color:var(--crimson);}
-  .lb-table tr:nth-child(1) td:first-child{color:var(--gold);}
 
   /* ---------- Saved Bets ---------- */
   .saved-card{
@@ -1660,34 +1678,52 @@ async function loadLeaderboard(){
   try{
     const { res, body } = await apiFetch('/api/leaderboard');
     if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
-    renderLeaderboard(body.rows || []);
+    renderLeaderboard(body.weeks || [], body.rows || []);
     leaderboardStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   }catch(err){
     leaderboardBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
   }
 }
 
-function renderLeaderboard(rows){
+function lbStatCellHtml(stat){
+  if(!stat) return `<td class="lb-week-cell lb-week-empty">—</td>`;
+  const record = `${stat.wins}-${stat.losses}${stat.pushes ? '-' + stat.pushes : ''}`;
+  const unitsClass = stat.totalUnits > 0 ? 'lb-pos' : (stat.totalUnits < 0 ? 'lb-neg' : '');
+  const unitsText = (stat.totalUnits > 0 ? '+' : '') + stat.totalUnits.toFixed(2) + 'u';
+  return `<td class="lb-week-cell"><div class="lb-week-record">${record}</div><div class="lb-week-units ${unitsClass}">${unitsText}</div></td>`;
+}
+
+function renderLeaderboard(weeks, rows){
   if(!rows || rows.length === 0){
     leaderboardBody.innerHTML = `<div class="lb-loading">No settled picks yet.<br>Once saved picks' games finish (scores are checked automatically), standings show up here.</div>`;
     return;
   }
+
+  const weekHeadersHtml = weeks.map(w => `<th>${w}</th>`).join('');
+
+  const rowsHtml = rows.map((r,i)=>{
+    const weekCellsHtml = weeks.map(w => lbStatCellHtml(r.weeks[w])).join('');
+    const totalUnitsClass = r.total.totalUnits > 0 ? 'lb-pos' : (r.total.totalUnits < 0 ? 'lb-neg' : '');
+    return `
+      <tr>
+        <td>${i+1}</td>
+        <td><button class="lb-username-btn" type="button" data-user-id="${r.id}" data-username="${r.username}">${r.username}</button></td>
+        ${weekCellsHtml}
+        <td class="lb-total-record">${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}</td>
+        <td class="lb-total-winpct">${r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%'}</td>
+        <td class="lb-total-units ${totalUnitsClass}">${r.total.totalUnits > 0 ? '+' : ''}${r.total.totalUnits.toFixed(2)}u</td>
+      </tr>
+    `;
+  }).join('');
+
   leaderboardBody.innerHTML = `
     <table class="lb-table">
       <thead>
-        <tr><th>#</th><th>User</th><th>Record</th><th>Win %</th><th>Units</th></tr>
+        <tr>
+          <th>#</th><th>User</th>${weekHeadersHtml}<th class="lb-total-header">Record</th><th class="lb-total-header">Win %</th><th class="lb-total-header">Units</th>
+        </tr>
       </thead>
-      <tbody>
-        ${rows.map((r,i)=>`
-          <tr>
-            <td>${i+1}</td>
-            <td><button class="lb-username-btn" type="button" data-user-id="${r.id}" data-username="${r.username}">${r.username}</button></td>
-            <td>${r.wins}-${r.losses}${r.pushes ? '-' + r.pushes : ''}</td>
-            <td>${r.winPct === null ? '—' : r.winPct.toFixed(1) + '%'}</td>
-            <td class="${r.totalUnits > 0 ? 'lb-pos' : (r.totalUnits < 0 ? 'lb-neg' : '')}">${r.totalUnits > 0 ? '+' : ''}${r.totalUnits.toFixed(2)}u</td>
-          </tr>
-        `).join('')}
-      </tbody>
+      <tbody>${rowsHtml}</tbody>
     </table>
   `;
   leaderboardBody.querySelectorAll('.lb-username-btn').forEach(btn=>{

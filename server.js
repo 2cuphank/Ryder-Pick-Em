@@ -618,45 +618,98 @@ async function runGradingSweep() {
   return users;
 }
 
+// Same week-bucketing convention used on the frontend (public/index.html's
+// cfbWeekInfo) — kept in sync manually since this runs server-side. College
+// football weeks run Tue-through-Mon, anchored to the Tuesday opening the
+// "Week 0" game window (Saturday Aug 29, 2026). Adjust both copies together
+// if a future season's Week 0 date shifts.
+const CFB_WEEK0_TUESDAY = '2026-08-25';
+
+function cfbWeekLabelForDate(dateKey) {
+  if (!dateKey) return null;
+  const anchor = new Date(CFB_WEEK0_TUESDAY + 'T00:00:00Z').getTime();
+  const d = new Date(dateKey + 'T00:00:00Z').getTime();
+  if (Number.isNaN(d)) return null;
+  const weekNum = Math.floor((d - anchor) / (7 * 24 * 60 * 60 * 1000));
+  return { weekNum, label: weekNum >= 0 ? `Week ${weekNum}` : 'Preseason' };
+}
+
+function emptyStatBucket() {
+  return { wins: 0, losses: 0, pushes: 0, totalUnits: 0 };
+}
+
+function applyPickToBucket(bucket, pick) {
+  const units = Number(pick.units) > 0 ? Number(pick.units) : 1;
+  if (pick.status === 'win') {
+    bucket.totalUnits += units * (americanToDecimal(pick.priceText) - 1);
+    bucket.wins++;
+  } else if (pick.status === 'loss') {
+    bucket.totalUnits -= units;
+    bucket.losses++;
+  } else if (pick.status === 'push') {
+    bucket.pushes++;
+  }
+}
+
+function finalizeBucket(bucket) {
+  const decided = bucket.wins + bucket.losses;
+  return {
+    wins: bucket.wins,
+    losses: bucket.losses,
+    pushes: bucket.pushes,
+    winPct: decided > 0 ? (bucket.wins / decided) * 100 : null,
+    totalUnits: Math.round(bucket.totalUnits * 100) / 100,
+  };
+}
+
 function computeLeaderboard(users) {
+  const weekSortKeys = {}; // label -> sort key, collected across every user so all rows share the same columns
+
   const rows = users
     .map(user => {
-      let wins = 0, losses = 0, pushes = 0, totalUnits = 0, settledCount = 0;
+      const totalBucket = emptyStatBucket();
+      const weekBuckets = {}; // label -> bucket
+
       Object.values(user.picks || {}).forEach(pick => {
         if (!pick.locked || pick.status === 'pending') return;
-        settledCount++;
-        const units = Number(pick.units) > 0 ? Number(pick.units) : 1;
-        if (pick.status === 'win') {
-          totalUnits += units * (americanToDecimal(pick.priceText) - 1);
-          wins++;
-        } else if (pick.status === 'loss') {
-          totalUnits -= units;
-          losses++;
-        } else if (pick.status === 'push') {
-          pushes++;
-        }
+        applyPickToBucket(totalBucket, pick);
+
+        const info = cfbWeekLabelForDate(pick.dateKey);
+        const label = info ? info.label : 'Other';
+        const sortKey = info ? info.weekNum : Infinity;
+        weekSortKeys[label] = sortKey;
+        if (!weekBuckets[label]) weekBuckets[label] = emptyStatBucket();
+        applyPickToBucket(weekBuckets[label], pick);
       });
-      const decided = wins + losses;
+
+      const settledCount = totalBucket.wins + totalBucket.losses + totalBucket.pushes;
+      if (settledCount === 0) return null;
+
+      const weeks = {};
+      Object.entries(weekBuckets).forEach(([label, bucket]) => {
+        weeks[label] = finalizeBucket(bucket);
+      });
+
       return {
         id: user.id,
         username: user.username,
-        wins, losses, pushes,
-        winPct: decided > 0 ? (wins / decided) * 100 : null,
-        totalUnits: Math.round(totalUnits * 100) / 100,
-        settledCount,
+        weeks,
+        total: finalizeBucket(totalBucket),
       };
     })
-    .filter(r => r.settledCount > 0);
+    .filter(Boolean);
 
-  // Sorted by win % first (no decided games sinks to the bottom), then by
-  // units as a tiebreaker for equal percentages.
+  // Sorted by total win % first (no decided games sinks to the bottom),
+  // then by total units as a tiebreaker for equal percentages.
   rows.sort((a, b) => {
-    const aPct = a.winPct === null ? -1 : a.winPct;
-    const bPct = b.winPct === null ? -1 : b.winPct;
+    const aPct = a.total.winPct === null ? -1 : a.total.winPct;
+    const bPct = b.total.winPct === null ? -1 : b.total.winPct;
     if (bPct !== aPct) return bPct - aPct;
-    return b.totalUnits - a.totalUnits;
+    return b.total.totalUnits - a.total.totalUnits;
   });
-  return rows;
+
+  const weeks = Object.keys(weekSortKeys).sort((a, b) => weekSortKeys[a] - weekSortKeys[b]);
+  return { weeks, rows };
 }
 
 // --- Auth routes -------------------------------------------------------
@@ -859,7 +912,8 @@ app.get('/api/leaderboard', async (req, res) => {
       inFlightGrading = runGradingSweep().finally(() => { inFlightGrading = null; });
     }
     const users = await inFlightGrading;
-    res.json({ ok: true, rows: computeLeaderboard(users) });
+    const { weeks, rows } = computeLeaderboard(users);
+    res.json({ ok: true, weeks, rows });
   } catch (err) {
     console.error('Error building leaderboard:', err);
     res.status(500).json({ ok: false, error: err.message });
