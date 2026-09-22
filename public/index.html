@@ -648,7 +648,6 @@
   <div class="slip-body" id="slipBody"></div>
   <div class="slip-foot">
     <div class="slip-stat"><span>Selections</span><span id="slipStatCount">0</span></div>
-    <div class="slip-stat"><span>Combined price</span><span id="slipStatPrice">—</span></div>
     <button class="save-btn" id="savePicksBtn">Save picks to profile</button>
     <div class="save-status" id="saveStatus"></div>
     <button class="clear-btn" id="clearBtn">Clear unsaved selections</button>
@@ -794,26 +793,10 @@ const updatedStampEl = document.getElementById('updatedStamp');
 const slipBody = document.getElementById('slipBody');
 const slipCountBadge = document.getElementById('slipCountBadge');
 const slipStatCount = document.getElementById('slipStatCount');
-const slipStatPrice = document.getElementById('slipStatPrice');
 const savePicksBtn = document.getElementById('savePicksBtn');
 const saveStatus = document.getElementById('saveStatus');
 
 function selKey(gameId, market, side){ return `${gameId}::${market}::${side}`; }
-
-function americanToDecimal(str){
-  const m = str.match(/([+-]\d+)(?!.*\d)/); // last number = price
-  if(!m) return 2.0;
-  const n = parseInt(m[1],10);
-  return n > 0 ? 1 + n/100 : 1 + 100/Math.abs(n);
-}
-
-function combinedPriceLabel(){
-  const list = activeSlipSelections();
-  if(list.length === 0) return '—';
-  const dec = list.reduce((acc,s)=> acc * americanToDecimal(s.priceText), 1);
-  const americanEq = dec >= 2 ? Math.round((dec-1)*100) : Math.round(-100/(dec-1));
-  return (americanEq > 0 ? '+' : '') + americanEq + `  (${dec.toFixed(2)}x)`;
-}
 
 // Once a pick is graded (win/loss/push), it's done — it stays visible in
 // Saved Bets and counts toward the leaderboard, but there's no reason to
@@ -957,7 +940,6 @@ function renderSlip(){
   const list = activeSlipSelections();
   slipCountBadge.textContent = list.length;
   slipStatCount.textContent = list.length;
-  slipStatPrice.textContent = combinedPriceLabel();
 
   const unsavedCount = list.filter(s => !s.locked).length;
   savePicksBtn.disabled = unsavedCount === 0;
