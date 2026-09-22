@@ -586,7 +586,7 @@
     <button class="view-tab active" id="viewBoardBtn" type="button">Odds Board</button>
     <button class="view-tab" id="viewSavedBtn" type="button">Saved Bets</button>
     <button class="view-tab" id="viewLeaderboardBtn" type="button">Leaderboard</button>
-    <button class="view-tab" id="viewPickemBtn" type="button">Pick 'Em Leaderboard</button>
+    <button class="view-tab" id="viewPickemBtn" type="button">Pat Hill Standings</button>
     <button class="view-tab" id="viewAdminBtn" type="button" style="display:none;">Admin</button>
   </div>
 
@@ -619,7 +619,7 @@
 
   <div id="pickemView" style="display:none;">
     <div class="board-head">
-      <h2>Pick 'Em Leaderboard</h2>
+      <h2>Pat Hill Standings</h2>
       <div class="updated" id="pickemStamp"></div>
     </div>
     <div id="pickemBody"></div>
@@ -1766,7 +1766,7 @@ function renderSavedWeekTabs(orderedLabels){
   });
 }
 
-// Usernames shown only on the separate "Pick 'Em Leaderboard" tab, and
+// Usernames shown only on the separate "Pat Hill Standings" tab, and
 // excluded from the main Leaderboard tab. Match is case-insensitive so
 // exact capitalization at signup doesn't matter.
 const PICKEM_USERNAMES = ["Rico Bo$co", "Pledge Master Dan", "Skell Presidente"];
