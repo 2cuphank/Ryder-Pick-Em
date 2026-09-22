@@ -194,13 +194,6 @@ function formatPoint(value) {
   return n > 0 ? `+${n}` : `${n}`;
 }
 
-// American odds -> decimal, e.g. "+150" -> 2.5, "-110" -> 1.909...
-function americanToDecimal(priceText) {
-  const n = parseInt(priceText, 10);
-  if (Number.isNaN(n)) return 2.0;
-  return n > 0 ? 1 + n / 100 : 1 + 100 / Math.abs(n);
-}
-
 function findParticipant(market, matchFn) {
   if (!market || !Array.isArray(market.participants)) return null;
   return market.participants.find(matchFn) || null;
@@ -635,16 +628,13 @@ function cfbWeekLabelForDate(dateKey) {
 }
 
 function emptyStatBucket() {
-  return { wins: 0, losses: 0, pushes: 0, totalUnits: 0 };
+  return { wins: 0, losses: 0, pushes: 0 };
 }
 
 function applyPickToBucket(bucket, pick) {
-  const units = Number(pick.units) > 0 ? Number(pick.units) : 1;
   if (pick.status === 'win') {
-    bucket.totalUnits += units * (americanToDecimal(pick.priceText) - 1);
     bucket.wins++;
   } else if (pick.status === 'loss') {
-    bucket.totalUnits -= units;
     bucket.losses++;
   } else if (pick.status === 'push') {
     bucket.pushes++;
@@ -658,7 +648,6 @@ function finalizeBucket(bucket) {
     losses: bucket.losses,
     pushes: bucket.pushes,
     winPct: decided > 0 ? (bucket.wins / decided) * 100 : null,
-    totalUnits: Math.round(bucket.totalUnits * 100) / 100,
   };
 }
 
@@ -700,12 +689,13 @@ function computeLeaderboard(users) {
     .filter(Boolean);
 
   // Sorted by total win % first (no decided games sinks to the bottom),
-  // then by total units as a tiebreaker for equal percentages.
+  // then by total wins as a tiebreaker for equal percentages (more decided
+  // games at the same rate ranks higher).
   rows.sort((a, b) => {
     const aPct = a.total.winPct === null ? -1 : a.total.winPct;
     const bPct = b.total.winPct === null ? -1 : b.total.winPct;
     if (bPct !== aPct) return bPct - aPct;
-    return b.total.totalUnits - a.total.totalUnits;
+    return b.total.wins - a.total.wins;
   });
 
   const weeks = Object.keys(weekSortKeys).sort((a, b) => weekSortKeys[a] - weekSortKeys[b]);
@@ -875,7 +865,7 @@ app.put('/api/admin/users/:userId/picks', requireAdmin, asyncHandler(async (req,
   // Intentionally no kickoff-based delete protection here, unlike the
   // regular /api/picks route — that restriction exists to stop a user from
   // quietly editing their own settled record, not to stop an admin fixing
-  // a mistake (a bad auto-grade, a duplicate pick, a typo'd unit size, etc).
+  // a mistake (a bad auto-grade, a duplicate pick, a wrong line, etc).
   const adminUser = users.find(u => u.id === req.session.userId);
   console.log(`[admin] ${adminUser ? adminUser.username : 'unknown admin'} edited picks for user ${users[idx].username}`);
 

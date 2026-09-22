@@ -307,15 +307,6 @@
   .ticket-remove:hover{color:var(--crimson);}
 
   .ticket-row{display:flex;justify-content:space-between;align-items:center;margin-top:9px;gap:8px;}
-  .units-field{display:flex;align-items:center;gap:6px;}
-  .units-field label{font-size:10.5px;color:var(--text-faint);text-transform:uppercase;letter-spacing:.5px;}
-  .units-input{
-    width:56px;background:var(--surface-raised);border:1px solid var(--line);
-    border-radius:6px;padding:5px 6px;color:var(--text);font-size:13px;
-    font-family:'IBM Plex Mono',monospace;text-align:center;
-  }
-  .units-input:disabled{opacity:.65;}
-  .units-input:focus{outline:none;border-color:var(--gold-dim);}
 
   .pick-badge{
     font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
@@ -362,26 +353,22 @@
   .lb-table td:nth-child(2){font-weight:600;white-space:nowrap;}
   .lb-table tr:nth-child(1) td:first-child{color:var(--gold);}
 
-  /* Per-week cells: compact record + units stacked, muted until it's the
-     row's own data (kept plain so a wide season's worth of weeks stays
-     scannable rather than competing visually with the Total columns). */
+  /* Per-week cells: compact record, muted until it's the row's own data
+     (kept plain so a wide season's worth of weeks stays scannable rather
+     than competing visually with the Total columns). */
   .lb-week-cell{text-align:center;font-family:'IBM Plex Mono',monospace;white-space:nowrap;}
   .lb-week-cell.lb-week-empty{color:var(--text-faint);}
   .lb-week-record{font-size:12.5px;color:var(--text-dim);}
-  .lb-week-units{font-size:11px;margin-top:1px;}
 
   /* Total columns: visually separated from the per-week columns with a
      divider and a slightly raised background, since they're the summary
      the leaderboard is ultimately sorted by. */
   .lb-total-header, td.lb-total-record{border-left:1px solid var(--line);}
   .lb-total-header{background:rgba(242,169,59,0.05);}
-  td.lb-total-record, td.lb-total-winpct, td.lb-total-units{
-    background:rgba(242,169,59,0.04);font-family:'IBM Plex Mono',monospace;
+  td.lb-total-record, td.lb-total-winpct{
+    background:rgba(242,169,59,0.04);font-family:'IBM Plex Mono',monospace;color:var(--text-dim);white-space:nowrap;
   }
-  td.lb-total-record, td.lb-total-winpct{color:var(--text-dim);white-space:nowrap;}
-  td.lb-total-units{font-weight:700;text-align:right;white-space:nowrap;}
-  .lb-pos{color:var(--win-green);}
-  .lb-neg{color:var(--crimson);}
+  td.lb-total-winpct{font-weight:700;text-align:right;}
 
   /* ---------- Saved Bets ---------- */
   .saved-card{
@@ -497,7 +484,6 @@
        under 16px — this is the single biggest iPhone-specific annoyance,
        so it overrides every input/select on the page at this width. */
     input, select, textarea{font-size:16px !important;}
-    .units-input{width:64px;padding:7px 6px;}
     .admin-input{width:64px;}
 
     .wrap{padding-left:14px;padding-right:14px;}
@@ -648,7 +634,7 @@
   </div>
 
   <footer>
-    Sample lines shown only when the live fetch fails — not affiliated with DraftKings Inc. Odds come from TheRundown API (<code>/api/v2/sports/1/events/{date}</code>, sport 1 = NCAAF), filtered server-side to DraftKings (affiliate 19) only — see <code>server.js</code>. "Units" are a relative stake for tracking a record, not real money. If you or someone you know has a gambling problem, call 1-800-GAMBLER. Must be 21+ and present in a state where sports betting is legal to wager anywhere.
+    Sample lines shown only when the live fetch fails — not affiliated with DraftKings Inc. Odds come from TheRundown API (<code>/api/v2/sports/1/events/{date}</code>, sport 1 = NCAAF), filtered server-side to DraftKings (affiliate 19) only — see <code>server.js</code>. If you or someone you know has a gambling problem, call 1-800-GAMBLER. Must be 21+ and present in a state where sports betting is legal to wager anywhere.
   </footer>
 </div>
 
@@ -941,17 +927,6 @@ function renderGames(){
   });
 }
 
-function unitsProfitLabel(sel){
-  const units = Number(sel.units) > 0 ? Number(sel.units) : 1;
-  if(sel.status === 'win'){
-    const profit = units * (americanToDecimal(sel.priceText) - 1);
-    return `+${profit.toFixed(2)}u`;
-  }
-  if(sel.status === 'loss') return `-${units.toFixed(2)}u`;
-  if(sel.status === 'push') return 'push';
-  return null;
-}
-
 // Games with no known kickoff time ("Time TBD") are treated as not yet
 // started through the end of their listed game day — conservative, but
 // avoids accidentally allowing a delete on a game that may have already
@@ -1009,11 +984,9 @@ function renderSlip(){
     } else if(sel.status === 'pending'){
       badgeHtml = `<span class="pick-badge pending">Pending</span>`;
     } else {
-      const profit = unitsProfitLabel(sel);
-      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}</span>`;
     }
 
-    const canEditUnits = !sel.locked || sel.status === 'pending';
     const beforeKickoff = isPickBeforeKickoff(sel);
     const canRemove = !sel.locked || beforeKickoff;
 
@@ -1026,25 +999,12 @@ function renderSlip(){
         <div class="ticket-price">${sel.priceText}</div>
       </div>
       <div class="ticket-row">
-        <div class="units-field">
-          <label for="units-${sel.key}">Units</label>
-          <input class="units-input" id="units-${sel.key}" type="number" min="0.25" step="0.25"
-            value="${Number(sel.units) || 1}" ${canEditUnits ? '' : 'disabled'}>
-        </div>
         ${badgeHtml}
       </div>
       ${canRemove
         ? `<button class="ticket-remove" aria-label="${sel.locked ? 'Delete saved pick' : 'Remove selection'}">${sel.locked ? 'Delete pick' : 'Remove'} ✕</button>`
         : `<div class="saved-locked-note" style="margin-top:8px;">Kickoff has passed — locked in</div>`}
     `;
-
-    const unitsInput = t.querySelector('.units-input');
-    unitsInput.onchange = async ()=>{
-      const val = parseFloat(unitsInput.value);
-      selections[sel.key].units = (Number.isFinite(val) && val > 0) ? val : 1;
-      await persist();
-      renderSlip();
-    };
 
     const removeBtn = t.querySelector('.ticket-remove');
     if(removeBtn){
@@ -1082,7 +1042,7 @@ async function toggleSelection(key, data){
     if(selections[key].locked) return;
     delete selections[key];
   } else {
-    selections[key] = { key, ...data, units: 1, locked: false, status: 'pending', savedAt: Date.now() };
+    selections[key] = { key, ...data, locked: false, status: 'pending', savedAt: Date.now() };
   }
   render();
   await persist();
@@ -1311,17 +1271,15 @@ async function openProfileModal(userId, username){
 }
 
 function profilePickCardHtml(sel){
-  const profit = unitsProfitLabel(sel);
   const badgeHtml = sel.status === 'pending'
     ? `<span class="pick-badge pending">Pending</span>`
-    : `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+    : `<span class="pick-badge ${sel.status}">${sel.status}</span>`;
   return `
     <div class="saved-card">
       <div class="saved-card-main">
         <div class="saved-card-game">${sel.gameSummary || ''}</div>
         <div class="saved-card-pick">${sel.pickLabel || ''}</div>
         <div class="saved-card-meta">
-          <span>${Number(sel.units) || 1}u</span>
           ${badgeHtml}
         </div>
       </div>
@@ -1528,7 +1486,6 @@ function renderAdminPickEditor(userId, username, picks){
       </td>
       <td><input class="admin-input" type="number" step="0.5" value="${(pick.point === null || pick.point === undefined) ? '' : pick.point}" placeholder="—" data-field="point"></td>
       <td><input class="admin-input" type="text" value="${pick.priceText || ''}" placeholder="-110" data-field="priceText"></td>
-      <td><input class="admin-input" type="number" min="0.25" step="0.25" value="${Number(pick.units) || 1}" data-field="units"></td>
       <td>
         <select class="admin-select" data-field="status">
           ${['pending','win','loss','push'].map(s=>`<option value="${s}" ${pick.status===s?'selected':''}>${s}</option>`).join('')}
@@ -1544,7 +1501,7 @@ function renderAdminPickEditor(userId, username, picks){
     : `
       <div class="admin-table-scroll">
         <table class="admin-editor-table">
-          <thead><tr><th>Pick</th><th>Line</th><th>Price</th><th>Units</th><th>Status</th><th>Locked</th><th></th></tr></thead>
+          <thead><tr><th>Pick</th><th>Line</th><th>Price</th><th>Status</th><th>Locked</th><th></th></tr></thead>
           <tbody id="adminEditorBody">${rowsHtml}</tbody>
         </table>
       </div>
@@ -1572,7 +1529,6 @@ function renderAdminPickEditor(userId, username, picks){
         <label>Pick label<input class="admin-input" id="addPickLabel" type="text" placeholder="Ohio State -3.5"></label>
         <label>Line<input class="admin-input" id="addPoint" type="number" step="0.5" placeholder="-3.5"></label>
         <label>Price<input class="admin-input" id="addPrice" type="text" placeholder="-110"></label>
-        <label>Units<input class="admin-input" id="addUnits" type="number" min="0.25" step="0.25" value="1"></label>
         <label>Result
           <select class="admin-select" id="addStatus">
             <option value="win">Win</option>
@@ -1627,14 +1583,12 @@ function renderAdminPickEditor(userId, username, picks){
       adminBody.querySelectorAll('#adminEditorBody tr').forEach(row=>{
         const key = row.dataset.key;
         const original = picks[key] || {};
-        const unitsVal = parseFloat(row.querySelector('[data-field="units"]').value);
         const statusVal = row.querySelector('[data-field="status"]').value;
         const lockedVal = row.querySelector('[data-field="locked"]').checked;
         const pointRaw = row.querySelector('[data-field="point"]').value;
         const priceVal = row.querySelector('[data-field="priceText"]').value.trim();
         updatedPicks[key] = {
           ...original,
-          units: Number.isFinite(unitsVal) && unitsVal > 0 ? unitsVal : 1,
           status: statusVal,
           locked: lockedVal,
           point: pointRaw === '' ? null : Number(pointRaw),
@@ -1668,7 +1622,6 @@ function renderAdminPickEditor(userId, username, picks){
     const pickLabel = document.getElementById('addPickLabel').value.trim();
     const pointRaw = document.getElementById('addPoint').value;
     const priceText = document.getElementById('addPrice').value.trim();
-    const unitsRaw = document.getElementById('addUnits').value;
     const status = document.getElementById('addStatus').value;
     const dateKey = document.getElementById('addDate').value; // yyyy-mm-dd, or ''
 
@@ -1681,7 +1634,6 @@ function renderAdminPickEditor(userId, username, picks){
       return;
     }
 
-    const unitsVal = parseFloat(unitsRaw);
     const gameId = 'manual-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
     const key = `${gameId}::${market}::${side}`;
 
@@ -1689,7 +1641,6 @@ function renderAdminPickEditor(userId, username, picks){
       key, gameId, market, side,
       gameSummary, pickLabel, priceText,
       point: market === 'ml' ? null : Number(pointRaw),
-      units: Number.isFinite(unitsVal) && unitsVal > 0 ? unitsVal : 1,
       locked: true,
       status,
       dateKey: dateKey || null,
@@ -1745,7 +1696,7 @@ function renderSavedBets(){
 
   savedWeekGroups = groups;
   const orderedLabels = Object.keys(groups).sort((a,b)=> groups[a].sortKey - groups[b].sortKey);
-  // Keep whatever tab is already selected across re-renders (editing units,
+  // Keep whatever tab is already selected across re-renders (deleting a pick,
   // deleting a pick, etc); only fall back to the first week if that tab no
   // longer exists (e.g. its last pick just got deleted) or none was set yet.
   if(!savedActiveWeek || !groups[savedActiveWeek]){
@@ -1778,8 +1729,7 @@ function renderSavedWeekTabs(orderedLabels){
     if(sel.status === 'pending'){
       badgeHtml = `<span class="pick-badge pending">Pending</span>`;
     } else {
-      const profit = unitsProfitLabel(sel);
-      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}${profit ? ' · ' + profit : ''}</span>`;
+      badgeHtml = `<span class="pick-badge ${sel.status}">${sel.status}</span>`;
     }
 
     const beforeKickoff = isPickBeforeKickoff(sel);
@@ -1789,7 +1739,6 @@ function renderSavedWeekTabs(orderedLabels){
         <div class="saved-card-game">${sel.gameSummary}</div>
         <div class="saved-card-pick">${sel.pickLabel}</div>
         <div class="saved-card-meta">
-          <span>${Number(sel.units) || 1}u</span>
           ${badgeHtml}
         </div>
       </div>
@@ -1857,9 +1806,7 @@ async function loadPickemLeaderboard(){
 function lbStatCellHtml(stat){
   if(!stat) return `<td class="lb-week-cell lb-week-empty">—</td>`;
   const record = `${stat.wins}-${stat.losses}${stat.pushes ? '-' + stat.pushes : ''}`;
-  const unitsClass = stat.totalUnits > 0 ? 'lb-pos' : (stat.totalUnits < 0 ? 'lb-neg' : '');
-  const unitsText = (stat.totalUnits > 0 ? '+' : '') + stat.totalUnits.toFixed(2) + 'u';
-  return `<td class="lb-week-cell"><div class="lb-week-record">${record}</div><div class="lb-week-units ${unitsClass}">${unitsText}</div></td>`;
+  return `<td class="lb-week-cell"><div class="lb-week-record">${record}</div></td>`;
 }
 
 function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
@@ -1872,7 +1819,6 @@ function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
 
   const rowsHtml = rows.map((r,i)=>{
     const weekCellsHtml = weeks.map(w => lbStatCellHtml(r.weeks[w])).join('');
-    const totalUnitsClass = r.total.totalUnits > 0 ? 'lb-pos' : (r.total.totalUnits < 0 ? 'lb-neg' : '');
     return `
       <tr>
         <td>${i+1}</td>
@@ -1880,7 +1826,6 @@ function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
         ${weekCellsHtml}
         <td class="lb-total-record">${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}</td>
         <td class="lb-total-winpct">${r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%'}</td>
-        <td class="lb-total-units ${totalUnitsClass}">${r.total.totalUnits > 0 ? '+' : ''}${r.total.totalUnits.toFixed(2)}u</td>
       </tr>
     `;
   }).join('');
@@ -1889,7 +1834,7 @@ function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
     <table class="lb-table">
       <thead>
         <tr>
-          <th>#</th><th>User</th>${weekHeadersHtml}<th class="lb-total-header">Record</th><th class="lb-total-header">Win %</th><th class="lb-total-header">Units</th>
+          <th>#</th><th>User</th>${weekHeadersHtml}<th class="lb-total-header">Record</th><th class="lb-total-header">Win %</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
@@ -1913,7 +1858,7 @@ function closeSlip(){ slipEl.classList.remove('open'); backdropEl.classList.remo
 function renderNotice(){
   const el = document.getElementById('noticeText');
   if(usingLiveData){
-    el.innerHTML = `<b>Live board.</b> College football lines below are pulled from TheRundown API, filtered to DraftKings only. Tap a line to add it to your slip, set units, then hit <b>Save picks to profile</b> to lock it into your record — saved picks get graded automatically once their game finishes, and feed the Leaderboard tab.`;
+    el.innerHTML = `<b>Live board.</b> College football lines below are pulled from TheRundown API, filtered to DraftKings only. Tap a line to add it to your slip, then hit <b>Save picks to profile</b> to lock it into your record — saved picks get graded automatically once their game finishes, and feed the Leaderboard tab.`;
   } else {
     el.innerHTML = `<b>Live fetch failed, showing sample lines.</b> (${liveErrorMessage || 'unknown error'}) This can mean the API key is invalid/out of quota, or there just aren't any NCAAF games with DraftKings odds posted in the lookout window right now. What's shown instead are illustrative sample lines on real matchups — saving picks still works, but sample-game picks won't ever grade since they aren't real games.`;
   }
