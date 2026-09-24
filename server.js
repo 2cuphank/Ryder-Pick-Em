@@ -696,22 +696,35 @@ function computeLeaderboard(users, { mortalOnly = false } = {}) {
     .map(user => {
       const totalBucket = emptyStatBucket();
       const weekBuckets = {}; // label -> bucket
+      const weekPicks = {};   // label -> pick details (mortalOnly only — one pick per week, shown instead of a record)
 
       Object.values(user.picks || {}).forEach(pick => {
-        if (!pick.locked || pick.status === 'pending') return;
+        if (!pick.locked) return;
         if (mortalOnly && !pick.mortal) return;
-        applyPickToBucket(totalBucket, pick);
+        if (!mortalOnly && pick.status === 'pending') return;
 
         const info = cfbWeekLabelForDate(pick.dateKey);
         const label = info ? info.label : 'Other';
         const sortKey = info ? info.weekNum : Infinity;
         weekSortKeys[label] = sortKey;
+
+        if (mortalOnly) {
+          weekPicks[label] = {
+            pickLabel: pick.pickLabel || '',
+            gameSummary: pick.gameSummary || '',
+            priceText: pick.priceText || '',
+            status: pick.status,
+          };
+        }
+
+        if (pick.status === 'pending') return; // not counted in a record, but still shown above
+        applyPickToBucket(totalBucket, pick);
         if (!weekBuckets[label]) weekBuckets[label] = emptyStatBucket();
         applyPickToBucket(weekBuckets[label], pick);
       });
 
       const settledCount = totalBucket.wins + totalBucket.losses + totalBucket.pushes;
-      if (settledCount === 0) return null;
+      if (mortalOnly ? Object.keys(weekPicks).length === 0 : settledCount === 0) return null;
 
       const weeks = {};
       Object.entries(weekBuckets).forEach(([label, bucket]) => {
@@ -723,6 +736,7 @@ function computeLeaderboard(users, { mortalOnly = false } = {}) {
         username: user.username,
         weeks,
         total: finalizeBucket(totalBucket),
+        ...(mortalOnly ? { picks: weekPicks } : {}),
       };
     })
     .filter(Boolean);

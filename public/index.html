@@ -377,6 +377,16 @@
   .lb-week-cell.lb-week-empty{color:var(--text-faint);}
   .lb-week-record{font-size:12.5px;color:var(--text-dim);}
 
+  /* Bob Diaco Standings: each week's cell is the actual Mortal pick,
+     color-coded by outcome, instead of a win/loss record. */
+  .lb-week-pick{
+    font-size:11.5px;font-family:'Inter',sans-serif;font-weight:600;white-space:normal;
+    padding:6px 8px;border-radius:6px;min-width:90px;
+  }
+  .lb-pick-win{background:rgba(76,154,106,0.18);color:var(--win-green);}
+  .lb-pick-loss{background:rgba(193,67,46,0.18);color:var(--crimson);}
+  .lb-pick-pending{background:rgba(242,169,59,0.18);color:var(--gold);}
+
   /* Total columns: visually separated from the per-week columns with a
      divider and a slightly raised background, since they're the summary
      the leaderboard is ultimately sorted by. */
@@ -2015,7 +2025,7 @@ async function loadBobDiacoLeaderboard(){
     const { res, body } = await apiFetch('/api/leaderboard?mode=mortal');
     if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
     const rows = (body.rows || []).filter(r => isBobDiacoUsername(r.username));
-    renderLeaderboardTable(bobdiacoBody, body.weeks || [], rows, `None of ${BOBDIACO_USERNAMES.join(', ')} have a settled Mortal pick yet.`);
+    renderLeaderboardTable(bobdiacoBody, body.weeks || [], rows, `None of ${BOBDIACO_USERNAMES.join(', ')} have picked a Mortal yet.`, 'pick');
     bobdiacoStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   }catch(err){
     bobdiacoBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
@@ -2028,7 +2038,16 @@ function lbStatCellHtml(stat){
   return `<td class="lb-week-cell"><div class="lb-week-record">${record}</div></td>`;
 }
 
-function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
+// Bob Diaco Standings only: shows the actual Mortal pick for that week
+// instead of a record, color-coded win/loss/pending (a push reads as
+// pending-yellow too — it's neither a win nor a loss).
+function lbPickCellHtml(pick){
+  if(!pick) return `<td class="lb-week-cell lb-week-empty">—</td>`;
+  const statusClass = pick.status === 'win' ? 'lb-pick-win' : pick.status === 'loss' ? 'lb-pick-loss' : 'lb-pick-pending';
+  return `<td class="lb-week-cell"><div class="lb-week-pick ${statusClass}" title="${pick.gameSummary || ''}">${pick.pickLabel || '—'}</div></td>`;
+}
+
+function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml, mode = 'record'){
   if(!rows || rows.length === 0){
     container.innerHTML = `<div class="lb-loading">${emptyMessageHtml}</div>`;
     return;
@@ -2037,7 +2056,9 @@ function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml){
   const weekHeadersHtml = weeks.map(w => `<th>${w}</th>`).join('');
 
   const rowsHtml = rows.map((r,i)=>{
-    const weekCellsHtml = weeks.map(w => lbStatCellHtml(r.weeks[w])).join('');
+    const weekCellsHtml = mode === 'pick'
+      ? weeks.map(w => lbPickCellHtml(r.picks && r.picks[w])).join('')
+      : weeks.map(w => lbStatCellHtml(r.weeks[w])).join('');
     return `
       <tr>
         <td>${i+1}</td>
