@@ -593,6 +593,7 @@
     <button class="view-tab" id="viewSavedBtn" type="button">Saved Bets</button>
     <button class="view-tab" id="viewLeaderboardBtn" type="button">Leaderboard</button>
     <button class="view-tab" id="viewPickemBtn" type="button">Pat Hill Standings</button>
+    <button class="view-tab" id="viewBobDiacoBtn" type="button">Bob Diaco Standings</button>
     <button class="view-tab" id="viewAdminBtn" type="button" style="display:none;">Admin</button>
   </div>
 
@@ -636,6 +637,14 @@
       <div class="updated" id="pickemStamp"></div>
     </div>
     <div id="pickemBody"></div>
+  </div>
+
+  <div id="bobdiacoView" style="display:none;">
+    <div class="board-head">
+      <h2>Bob Diaco Standings</h2>
+      <div class="updated" id="bobdiacoStamp"></div>
+    </div>
+    <div id="bobdiacoBody"></div>
   </div>
 
   <div id="adminView" style="display:none;">
@@ -1489,6 +1498,7 @@ const viewBoardBtn = document.getElementById('viewBoardBtn');
 const viewSavedBtn = document.getElementById('viewSavedBtn');
 const viewLeaderboardBtn = document.getElementById('viewLeaderboardBtn');
 const viewPickemBtn = document.getElementById('viewPickemBtn');
+const viewBobDiacoBtn = document.getElementById('viewBobDiacoBtn');
 const viewAdminBtn = document.getElementById('viewAdminBtn');
 const boardView = document.getElementById('boardView');
 const savedView = document.getElementById('savedView');
@@ -1500,6 +1510,9 @@ const leaderboardStamp = document.getElementById('leaderboardStamp');
 const pickemView = document.getElementById('pickemView');
 const pickemBody = document.getElementById('pickemBody');
 const pickemStamp = document.getElementById('pickemStamp');
+const bobdiacoView = document.getElementById('bobdiacoView');
+const bobdiacoBody = document.getElementById('bobdiacoBody');
+const bobdiacoStamp = document.getElementById('bobdiacoStamp');
 const adminView = document.getElementById('adminView');
 const adminBody = document.getElementById('adminBody');
 const adminStamp = document.getElementById('adminStamp');
@@ -1509,15 +1522,18 @@ function switchView(view){
   viewSavedBtn.classList.toggle('active', view === 'saved');
   viewLeaderboardBtn.classList.toggle('active', view === 'leaderboard');
   viewPickemBtn.classList.toggle('active', view === 'pickem');
+  viewBobDiacoBtn.classList.toggle('active', view === 'bobdiaco');
   viewAdminBtn.classList.toggle('active', view === 'admin');
   boardView.style.display = view === 'board' ? '' : 'none';
   savedView.style.display = view === 'saved' ? '' : 'none';
   leaderboardView.style.display = view === 'leaderboard' ? '' : 'none';
   pickemView.style.display = view === 'pickem' ? '' : 'none';
+  bobdiacoView.style.display = view === 'bobdiaco' ? '' : 'none';
   adminView.style.display = view === 'admin' ? '' : 'none';
   if(view === 'saved') renderSavedBets();
   if(view === 'leaderboard') loadLeaderboard();
   if(view === 'pickem') loadPickemLeaderboard();
+  if(view === 'bobdiaco') loadBobDiacoLeaderboard();
   if(view === 'admin') loadAdminUserList();
 }
 
@@ -1525,6 +1541,7 @@ viewBoardBtn.onclick = ()=> switchView('board');
 viewSavedBtn.onclick = ()=> switchView('saved');
 viewLeaderboardBtn.onclick = ()=> switchView('leaderboard');
 viewPickemBtn.onclick = ()=> switchView('pickem');
+viewBobDiacoBtn.onclick = ()=> switchView('bobdiaco');
 viewAdminBtn.onclick = ()=> switchView('admin');
 
 /* ========================= Admin ========================= */
@@ -1898,6 +1915,28 @@ async function loadPickemLeaderboard(){
     pickemStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   }catch(err){
     pickemBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
+  }
+}
+
+// Usernames shown only on the separate "Bob Diaco Standings" tab.
+// Match is case-insensitive so exact capitalization at signup doesn't matter.
+const BOBDIACO_USERNAMES = ["Hank", "Rico Bo$co", "Skell Presidente", "Pledge Master Dan", "Zuppe", "Jacky Tables"];
+
+function isBobDiacoUsername(username){
+  return BOBDIACO_USERNAMES.some(n => n.toLowerCase() === String(username || '').toLowerCase());
+}
+
+async function loadBobDiacoLeaderboard(){
+  bobdiacoBody.innerHTML = `<div class="lb-loading">Grading recently finished games and tallying records — this can take a few seconds…</div>`;
+  bobdiacoStamp.textContent = '';
+  try{
+    const { res, body } = await apiFetch('/api/leaderboard');
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    const rows = (body.rows || []).filter(r => isBobDiacoUsername(r.username));
+    renderLeaderboardTable(bobdiacoBody, body.weeks || [], rows, `None of ${BOBDIACO_USERNAMES.join(', ')} have any settled picks yet.`);
+    bobdiacoStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  }catch(err){
+    bobdiacoBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
   }
 }
 
