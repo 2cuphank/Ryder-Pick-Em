@@ -1975,7 +1975,7 @@ async function loadLeaderboard(){
   try{
     const { res, body } = await apiFetch('/api/leaderboard');
     if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
-    const rows = (body.rows || []).filter(r => !isPickemUsername(r.username));
+    const rows = (body.rows || []).filter(r => !isPickemUsername(r.username) && !isBobDiacoUsername(r.username));
     renderLeaderboardTable(leaderboardBody, body.weeks || [], rows, 'No settled picks yet.<br>Once saved picks\' games finish (scores are checked automatically), standings show up here.');
     leaderboardStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   }catch(err){
