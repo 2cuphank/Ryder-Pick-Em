@@ -28,6 +28,15 @@ const RETRY_BACKOFF_MS = 3000;      // base backoff when TheRundown doesn't send
 const MAX_EVENTS_TO_GRADE_PER_REQUEST = 5; // cap per leaderboard load so it doesn't take forever
 const GRADE_ELIGIBLE_BUFFER_MS = 4 * 60 * 60 * 1000; // wait 4h past kickoff before checking a score
 
+// The only accounts allowed to flag a pick as their weekly "Mortal" pick
+// for the Bob Diaco Standings tab. Kept server-side (not just hidden in the
+// UI) so a direct API call can't set it for anyone else. Match is
+// case-insensitive so exact capitalization at signup doesn't matter.
+const MORTAL_USERNAMES = ['Hank', 'Rico Bo$co', 'Skell Presidente', 'Pledge Master Dan', 'Zuppe', 'Jacky Tables'];
+function canBeMortal(username) {
+  return MORTAL_USERNAMES.some(n => n.toLowerCase() === String(username || '').toLowerCase());
+}
+
 if (!RUNDOWN_KEY) {
   console.warn(
     '\n[warning] RUNDOWN_API_KEY is not set.\n' +
@@ -627,6 +636,35 @@ function cfbWeekLabelForDate(dateKey) {
   return { weekNum, label: weekNum >= 0 ? `Week ${weekNum}` : 'Preseason' };
 }
 
+// Keeps at most one "mortal"-flagged pick per week for a given user's
+// picks object, mutating it in place. Ineligible users get every mortal
+// flag stripped outright — this is the server-side backstop for the
+// Bob Diaco Standings "Mortal pick" feature, so a direct API call can't
+// grant it to an unlisted account or sneak in two for the same week.
+function sanitizeMortalFlags(picks, username) {
+  if (!canBeMortal(username)) {
+    Object.values(picks).forEach(pick => { if (pick && pick.mortal) pick.mortal = false; });
+    return;
+  }
+
+  const seenWeeks = new Set();
+  // Stable order (by savedAt, oldest first) so repeated saves don't
+  // reshuffle which pick wins the slot for a week that already has one.
+  const ordered = Object.values(picks)
+    .filter(pick => pick && pick.mortal)
+    .sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0));
+
+  ordered.forEach(pick => {
+    const info = cfbWeekLabelForDate(pick.dateKey);
+    const label = info ? info.label : 'Other';
+    if (seenWeeks.has(label)) {
+      pick.mortal = false;
+    } else {
+      seenWeeks.add(label);
+    }
+  });
+}
+
 function emptyStatBucket() {
   return { wins: 0, losses: 0, pushes: 0 };
 }
@@ -651,7 +689,7 @@ function finalizeBucket(bucket) {
   };
 }
 
-function computeLeaderboard(users) {
+function computeLeaderboard(users, { mortalOnly = false } = {}) {
   const weekSortKeys = {}; // label -> sort key, collected across every user so all rows share the same columns
 
   const rows = users
@@ -661,6 +699,7 @@ function computeLeaderboard(users) {
 
       Object.values(user.picks || {}).forEach(pick => {
         if (!pick.locked || pick.status === 'pending') return;
+        if (mortalOnly && !pick.mortal) return;
         applyPickToBucket(totalBucket, pick);
 
         const info = cfbWeekLabelForDate(pick.dateKey);
@@ -820,6 +859,8 @@ app.put('/api/picks', requireAuth, asyncHandler(async (req, res) => {
     }
   });
 
+  sanitizeMortalFlags(merged, users[idx].username);
+
   users[idx].picks = merged;
   await writeUsers(users);
 
@@ -869,6 +910,8 @@ app.put('/api/admin/users/:userId/picks', requireAdmin, asyncHandler(async (req,
   const adminUser = users.find(u => u.id === req.session.userId);
   console.log(`[admin] ${adminUser ? adminUser.username : 'unknown admin'} edited picks for user ${users[idx].username}`);
 
+  sanitizeMortalFlags(picks, users[idx].username);
+
   users[idx].picks = picks;
   await writeUsers(users);
   res.json({ ok: true, picks: users[idx].picks });
@@ -902,7 +945,8 @@ app.get('/api/leaderboard', async (req, res) => {
       inFlightGrading = runGradingSweep().finally(() => { inFlightGrading = null; });
     }
     const users = await inFlightGrading;
-    const { weeks, rows } = computeLeaderboard(users);
+    const mortalOnly = req.query.mode === 'mortal';
+    const { weeks, rows } = computeLeaderboard(users, { mortalOnly });
     res.json({ ok: true, weeks, rows });
   } catch (err) {
     console.error('Error building leaderboard:', err);

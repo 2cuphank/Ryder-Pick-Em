@@ -324,6 +324,17 @@
   .pick-badge.loss{background:rgba(193,67,46,0.16);color:var(--crimson);}
   .pick-badge.push{background:rgba(154,163,155,0.14);color:var(--text-dim);}
 
+  .mortal-toggle{
+    background:none;border:1px solid var(--line);border-radius:999px;cursor:pointer;
+    font-size:10.5px;font-weight:700;letter-spacing:.4px;text-transform:uppercase;
+    padding:4px 10px 4px 8px;color:var(--text-dim);font-family:'Inter',sans-serif;
+    display:inline-flex;align-items:center;gap:4px;
+  }
+  .mortal-toggle:hover{color:var(--gold);border-color:var(--gold);}
+  .mortal-toggle.active{background:rgba(242,169,59,0.14);color:var(--gold);border-color:rgba(242,169,59,0.4);}
+  .mortal-toggle:disabled{opacity:.5;cursor:default;}
+  .mortal-toggle:disabled:hover{color:var(--text-dim);border-color:var(--line);}
+
   .slip-foot{
     border-top:1px dashed var(--line);padding:14px 18px 18px;
     padding-bottom:max(18px, calc(env(safe-area-inset-bottom) + 10px));
@@ -967,6 +978,44 @@ async function deletePick(key, { confirmFirst } = {}){
   await persist();
 }
 
+// "Mortal" pick: one pick per week, for a fixed set of users only (the
+// Bob Diaco Standings roster), that counts toward that tab's record
+// instead of their full slate. Restricted client-side here for UI, and
+// again server-side in server.js so a direct API call can't set it for
+// anyone else.
+function isMortalEligibleUser(){
+  return !!(currentUser && isBobDiacoUsername(currentUser.username));
+}
+
+function weekLabelForPick(sel){
+  const info = cfbWeekInfo(sel.dateKey);
+  return info ? info.label : 'Other';
+}
+
+async function toggleMortal(key){
+  const sel = selections[key];
+  if(!sel || !isMortalEligibleUser()) return;
+  if(!isPickBeforeKickoff(sel)) return; // locked in once its own game starts, same as a saved pick
+
+  if(!sel.mortal){
+    const week = weekLabelForPick(sel);
+    const existingKey = Object.keys(selections).find(k =>
+      k !== key && selections[k].mortal && weekLabelForPick(selections[k]) === week
+    );
+    if(existingKey){
+      if(!isPickBeforeKickoff(selections[existingKey])){
+        alert(`This week's Mortal pick (${selections[existingKey].pickLabel}) already kicked off and can't be changed.`);
+        return;
+      }
+      selections[existingKey].mortal = false;
+    }
+  }
+
+  sel.mortal = !sel.mortal;
+  render();
+  await persist();
+}
+
 function renderSlip(){
   const list = activeSlipSelections();
   slipCountBadge.textContent = list.length;
@@ -1003,6 +1052,10 @@ function renderSlip(){
     const beforeKickoff = isPickBeforeKickoff(sel);
     const canRemove = !sel.locked || beforeKickoff;
 
+    const mortalHtml = isMortalEligibleUser()
+      ? `<button type="button" class="mortal-toggle${sel.mortal ? ' active' : ''}" ${beforeKickoff ? '' : 'disabled'}>${sel.mortal ? '★' : '☆'} Mortal</button>`
+      : '';
+
     t.innerHTML = `
       <div class="ticket-top">
         <div>
@@ -1013,6 +1066,7 @@ function renderSlip(){
       </div>
       <div class="ticket-row">
         ${badgeHtml}
+        ${mortalHtml}
       </div>
       ${canRemove
         ? `<button class="ticket-remove" aria-label="${sel.locked ? 'Delete saved pick' : 'Remove selection'}">${sel.locked ? 'Delete pick' : 'Remove'} ✕</button>`
@@ -1022,6 +1076,11 @@ function renderSlip(){
     const removeBtn = t.querySelector('.ticket-remove');
     if(removeBtn){
       removeBtn.onclick = ()=> deletePick(sel.key, { confirmFirst: sel.locked });
+    }
+
+    const mortalBtn = t.querySelector('.mortal-toggle');
+    if(mortalBtn){
+      mortalBtn.onclick = ()=> toggleMortal(sel.key);
     }
 
     slipBody.appendChild(t);
@@ -1930,10 +1989,13 @@ async function loadBobDiacoLeaderboard(){
   bobdiacoBody.innerHTML = `<div class="lb-loading">Grading recently finished games and tallying records — this can take a few seconds…</div>`;
   bobdiacoStamp.textContent = '';
   try{
-    const { res, body } = await apiFetch('/api/leaderboard');
+    // mode=mortal: only each user's weekly "Mortal" pick counts here,
+    // not their full slate (that's what makes this tab different from
+    // Pat Hill's, which counts everything).
+    const { res, body } = await apiFetch('/api/leaderboard?mode=mortal');
     if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
     const rows = (body.rows || []).filter(r => isBobDiacoUsername(r.username));
-    renderLeaderboardTable(bobdiacoBody, body.weeks || [], rows, `None of ${BOBDIACO_USERNAMES.join(', ')} have any settled picks yet.`);
+    renderLeaderboardTable(bobdiacoBody, body.weeks || [], rows, `None of ${BOBDIACO_USERNAMES.join(', ')} have a settled Mortal pick yet.`);
     bobdiacoStamp.textContent = 'UPDATED ' + new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
   }catch(err){
     bobdiacoBody.innerHTML = `<div class="lb-loading">Couldn't load the leaderboard (${err.message}). Try again in a moment.</div>`;
