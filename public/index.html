@@ -1650,9 +1650,12 @@ async function loadAdminUserPicks(userId, username){
 function renderAdminPickEditor(userId, username, picks){
   const entries = Object.entries(picks);
   const backBtn = `<button class="admin-back-btn" id="adminBackBtn" type="button">← Back to all users</button>`;
+  // Mortal picks (Bob Diaco Standings) only exist for this fixed roster —
+  // don't show the column at all for anyone else's editor.
+  const mortalEligible = isBobDiacoUsername(username);
 
   const rowsHtml = entries.map(([key, pick])=>`
-    <tr data-key="${key}">
+    <tr data-key="${key}" data-week="${weekLabelForPick(pick)}">
       <td>
         <div class="admin-pick-game">${pick.gameSummary || ''}</div>
         <div class="admin-pick-desc">${pick.pickLabel || ''}</div>
@@ -1666,6 +1669,7 @@ function renderAdminPickEditor(userId, username, picks){
         </select>
       </td>
       <td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-field="locked" ${pick.locked ? 'checked' : ''}></td>
+      ${mortalEligible ? `<td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-field="mortal" ${pick.mortal ? 'checked' : ''}></td>` : ''}
       <td><button class="admin-row-delete" type="button" data-action="delete">Delete</button></td>
     </tr>
   `).join('');
@@ -1675,10 +1679,11 @@ function renderAdminPickEditor(userId, username, picks){
     : `
       <div class="admin-table-scroll">
         <table class="admin-editor-table">
-          <thead><tr><th>Pick</th><th>Line</th><th>Price</th><th>Status</th><th>Locked</th><th></th></tr></thead>
+          <thead><tr><th>Pick</th><th>Line</th><th>Price</th><th>Status</th><th>Locked</th>${mortalEligible ? '<th>Mortal</th>' : ''}<th></th></tr></thead>
           <tbody id="adminEditorBody">${rowsHtml}</tbody>
         </table>
       </div>
+      ${mortalEligible ? `<div class="admin-add-hint">Only one pick per week can be Mortal — checking one here automatically unchecks any other Mortal pick that week, including on a game that's already gone final.</div>` : ''}
       <div class="admin-save-bar">
         <span class="admin-save-status" id="adminSaveStatus"></span>
         <button class="admin-save-btn" id="adminSaveBtn" type="button">Save changes</button>
@@ -1752,6 +1757,19 @@ function renderAdminPickEditor(userId, username, picks){
       };
     });
 
+    // Same one-per-week rule as the bet slip's star toggle, but here it's
+    // enforced across the whole table live, and works on games that have
+    // already gone final — that's the point of doing this from Admin.
+    adminBody.querySelectorAll('[data-field="mortal"]').forEach(cb=>{
+      cb.onchange = ()=>{
+        if(!cb.checked) return;
+        const week = cb.closest('tr').dataset.week;
+        adminBody.querySelectorAll('[data-field="mortal"]').forEach(other=>{
+          if(other !== cb && other.closest('tr').dataset.week === week) other.checked = false;
+        });
+      };
+    });
+
     document.getElementById('adminSaveBtn').onclick = async ()=>{
       const updatedPicks = {};
       adminBody.querySelectorAll('#adminEditorBody tr').forEach(row=>{
@@ -1761,12 +1779,14 @@ function renderAdminPickEditor(userId, username, picks){
         const lockedVal = row.querySelector('[data-field="locked"]').checked;
         const pointRaw = row.querySelector('[data-field="point"]').value;
         const priceVal = row.querySelector('[data-field="priceText"]').value.trim();
+        const mortalField = row.querySelector('[data-field="mortal"]');
         updatedPicks[key] = {
           ...original,
           status: statusVal,
           locked: lockedVal,
           point: pointRaw === '' ? null : Number(pointRaw),
           priceText: priceVal || original.priceText || '',
+          mortal: mortalField ? mortalField.checked : !!original.mortal,
         };
       });
 
