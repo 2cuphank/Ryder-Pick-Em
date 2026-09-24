@@ -193,6 +193,12 @@
 
   /* ---------- Week tabs ---------- */
   .weeks{display:flex;gap:8px;margin:22px 0 6px;overflow-x:auto;padding-bottom:4px;}
+  .admin-pick-for-bar{ display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:20px 0 0;padding:11px 14px;border-radius:8px;background:rgba(242,169,59,0.06);border:1px solid rgba(242,169,59,0.25);font-size:12.5px;color:var(--text-dim); }
+  .admin-pick-for-bar label{font-weight:700;color:var(--gold);text-transform:uppercase;font-size:10.5px;letter-spacing:.5px;}
+  .admin-pick-for-bar select{ background:var(--surface-raised);border:1px solid var(--line);border-radius:6px;padding:7px 10px;color:var(--text);font-size:12.5px;font-family:'Inter',sans-serif; }
+  .admin-pick-for-status{font-size:11.5px;color:var(--text-faint);margin-left:auto;}
+  .admin-pick-for-bar.active{ background:rgba(193,67,46,0.12);border-color:rgba(193,67,46,0.4); }
+  .admin-pick-for-bar.active label{color:var(--crimson);}
   .week-btn{
     font-family:'IBM Plex Mono',monospace;font-size:12px;letter-spacing:0.5px;
     background:transparent;border:1px solid var(--line);color:var(--text-dim);
@@ -578,7 +584,7 @@
 
 <div class="notice" id="noticeBanner">
   <span class="dot">●</span>
-  <div id="noticeText"><b>Loading odds…</b> Pulling current college football lines from TheRundown API.</div>
+  <div id="noticeText"><b>Loading odds…</b> Pulling current college football lines.</div>
 </div>
 
 <div class="wrap">
@@ -591,6 +597,13 @@
   </div>
 
   <div id="boardView">
+    <div class="admin-pick-for-bar" id="adminPickForBar" style="display:none;">
+      <label for="adminPickForSelect">Adding picks for</label>
+      <select id="adminPickForSelect">
+        <option value="">Myself</option>
+      </select>
+      <span class="admin-pick-for-status" id="adminPickForStatus"></span>
+    </div>
     <div class="weeks" id="weekTabs"></div>
 
     <div class="board-head">
@@ -634,7 +647,7 @@
   </div>
 
   <footer>
-    Sample lines shown only when the live fetch fails — not affiliated with DraftKings Inc. Odds come from TheRundown API (<code>/api/v2/sports/1/events/{date}</code>, sport 1 = NCAAF), filtered server-side to DraftKings (affiliate 19) only — see <code>server.js</code>. If you or someone you know has a gambling problem, call 1-800-GAMBLER. Must be 21+ and present in a state where sports betting is legal to wager anywhere.
+    Sample lines shown only when the live fetch fails — not affiliated with DraftKings Inc. Odds are filtered server-side to DraftKings only — see <code>server.js</code>. If you or someone you know has a gambling problem, call 1-800-GAMBLER. Must be 21+ and present in a state where sports betting is legal to wager anywhere.
   </footer>
 </div>
 
@@ -831,11 +844,15 @@ function renderWeekTabs(){
 
 function oddsButton(g, teamLabel, market, side, lineText, priceText, point){
   const key = selKey(g.id, market, side);
+  const isTargetingOther = !!adminTargetUserId;
+  const isSelected = isTargetingOther ? !!adminTargetPicks[key] : !!selections[key];
+
   const btn = document.createElement('button');
   btn.type = 'button';
-  btn.className = 'odds-btn' + (selections[key] ? ' selected' : '');
+  btn.className = 'odds-btn' + (isSelected ? ' selected' : '');
   btn.innerHTML = `<span class="line">${lineText}</span><span class="price">${priceText}</span>`;
-  btn.onclick = ()=> toggleSelection(key, {
+
+  const pickData = {
     gameId: g.id, market, side,
     gameSummary: `${g.away.name} @ ${g.home.name}`,
     pickLabel: `${teamLabel} ${market==='total' ? '' : lineText}`.trim(),
@@ -843,7 +860,12 @@ function oddsButton(g, teamLabel, market, side, lineText, priceText, point){
     point: (point === undefined ? null : point),
     dateKey: g.dateKey || null,
     kickoffISO: g.kickoffISO || null,
-  });
+  };
+
+  btn.onclick = isTargetingOther
+    ? ()=> toggleAdminPickForUser(key, pickData)
+    : ()=> toggleSelection(key, pickData);
+
   return btn;
 }
 
@@ -1034,6 +1056,98 @@ async function toggleSelection(key, data){
 let currentUser = null; // { id, username } or null for guest
 const GUEST_STORAGE_KEY = 'gridiron-selections-guest';
 
+/* ==================== Admin: pick-for-user state ==================== */
+let adminTargetUserId = null;
+let adminTargetUsername = null;
+let adminTargetPicks = {};
+
+async function toggleAdminPickForUser(key, data){
+  const statusEl = document.getElementById('adminPickForStatus');
+  if(adminTargetPicks[key]){
+    delete adminTargetPicks[key];
+  } else {
+    adminTargetPicks[key] = {
+      key, ...data,
+      locked: true,
+      status: 'pending',
+      savedAt: Date.now(),
+      placedAt: Date.now(),
+    };
+  }
+  renderGames();
+  if(statusEl) statusEl.textContent = 'Saving…';
+  try{
+    const { res, body } = await apiFetch(`/api/admin/users/${adminTargetUserId}/picks`, {
+      method: 'PUT',
+      body: JSON.stringify({ picks: adminTargetPicks }),
+    });
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    if(statusEl) statusEl.textContent = `Saved for ${adminTargetUsername}.`;
+  }catch(err){
+    if(statusEl) statusEl.textContent = `Failed to save: ${err.message}`;
+  }
+}
+
+async function loadAdminPickForOptions(){
+  const bar = document.getElementById('adminPickForBar');
+  const select = document.getElementById('adminPickForSelect');
+  if(!bar || !select) return;
+
+  if(!currentUser || !currentUser.isAdmin){
+    bar.style.display = 'none';
+    adminTargetUserId = null;
+    adminTargetUsername = null;
+    adminTargetPicks = {};
+    return;
+  }
+
+  bar.style.display = 'flex';
+
+  try{
+    const { res, body } = await apiFetch('/api/admin/users');
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    const users = (body.users || []).filter(u => u.id !== currentUser.id);
+    select.innerHTML = `<option value="">Myself</option>` +
+      users.map(u => `<option value="${u.id}" data-username="${u.username}">${u.username}${u.isAdmin ? ' 👑' : ''}</option>`).join('');
+  }catch(err){
+    console.error('Could not load users for admin pick-for dropdown', err);
+  }
+}
+
+async function handleAdminPickForChange(){
+  const select = document.getElementById('adminPickForSelect');
+  const bar = document.getElementById('adminPickForBar');
+  const statusEl = document.getElementById('adminPickForStatus');
+  const userId = select.value;
+
+  if(!userId){
+    adminTargetUserId = null;
+    adminTargetUsername = null;
+    adminTargetPicks = {};
+    bar.classList.remove('active');
+    if(statusEl) statusEl.textContent = '';
+    renderGames();
+    return;
+  }
+
+  const username = select.selectedOptions[0]?.dataset.username || 'that user';
+  adminTargetUserId = userId;
+  adminTargetUsername = username;
+  bar.classList.add('active');
+  if(statusEl) statusEl.textContent = 'Loading their current picks…';
+
+  try{
+    const { res, body } = await apiFetch(`/api/admin/users/${userId}/picks`);
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    adminTargetPicks = body.picks || {};
+    if(statusEl) statusEl.textContent = `Click any line to add/remove it for ${username}.`;
+  }catch(err){
+    adminTargetPicks = {};
+    if(statusEl) statusEl.textContent = `Couldn't load ${username}'s picks: ${err.message}`;
+  }
+  renderGames();
+}
+
 async function apiFetch(url, options){
   const res = await fetch(url, {
     headers: { 'Content-Type': 'application/json' },
@@ -1176,6 +1290,8 @@ function renderAuthArea(){
       switchView('board'); // don't leave a logged-out/non-admin user stuck on a hidden tab
     }
   }
+
+  loadAdminPickForOptions();
 }
 
 function openAuthModal(mode){
@@ -1840,7 +1956,7 @@ function closeSlip(){ slipEl.classList.remove('open'); backdropEl.classList.remo
 function renderNotice(){
   const el = document.getElementById('noticeText');
   if(usingLiveData){
-    el.innerHTML = `<b>Live board.</b> College football lines below are pulled from TheRundown API, filtered to DraftKings only. Tap a line to add it to your slip, then hit <b>Save picks to profile</b> to lock it into your record — saved picks get graded automatically once their game finishes, and feed the Leaderboard tab.`;
+    el.innerHTML = `<b>Live board.</b> College football lines below are filtered to DraftKings only. Tap a line to add it to your slip, then hit <b>Save picks to profile</b> to lock it into your record — saved picks get graded automatically once their game finishes, and feed the Leaderboard tab.`;
   } else {
     el.innerHTML = `<b>Live fetch failed, showing sample lines.</b> (${liveErrorMessage || 'unknown error'}) This can mean the API key is invalid/out of quota, or there just aren't any NCAAF games with DraftKings odds posted in the lookout window right now. What's shown instead are illustrative sample lines on real matchups — saving picks still works, but sample-game picks won't ever grade since they aren't real games.`;
   }
@@ -1848,6 +1964,9 @@ function renderNotice(){
 
 /* ========================= Boot ========================= */
 (async function init(){
+  const adminPickForSelect = document.getElementById('adminPickForSelect');
+  if(adminPickForSelect) adminPickForSelect.onchange = handleAdminPickForChange;
+
   await restore();
   renderAuthArea();
   await buildSchedule();
