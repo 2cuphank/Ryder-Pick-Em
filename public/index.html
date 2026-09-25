@@ -886,12 +886,20 @@ function oddsButton(g, teamLabel, market, side, lineText, priceText, point){
   btn.className = 'odds-btn' + (isSelected ? ' selected' : '');
   btn.innerHTML = `<span class="line">${lineText}</span><span class="price">${priceText}</span>`;
 
+  const resolvedPoint = (point === undefined ? null : point);
+  // Totals read "Away/Home Over/Under 51.5" — a bare "Over"/"Under" doesn't
+  // say which game it's for once it's sitting in a slip or on a leaderboard
+  // next to a dozen others. Spread/ML picks keep their normal "Team -3.5" form.
+  const pickLabel = market === 'total'
+    ? `${g.away.name}/${g.home.name} ${teamLabel}${resolvedPoint === null ? '' : ' ' + resolvedPoint}`.trim()
+    : `${teamLabel} ${lineText}`.trim();
+
   const pickData = {
     gameId: g.id, market, side,
     gameSummary: `${g.away.name} @ ${g.home.name}`,
-    pickLabel: `${teamLabel} ${market==='total' ? '' : lineText}`.trim(),
+    pickLabel,
     priceText,
-    point: (point === undefined ? null : point),
+    point: resolvedPoint,
     dateKey: g.dateKey || null,
     kickoffISO: g.kickoffISO || null,
   };
