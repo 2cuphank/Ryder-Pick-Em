@@ -451,6 +451,10 @@
     padding:6px 8px;color:var(--text);font-size:12.5px;font-family:'IBM Plex Mono',monospace;width:70px;
   }
   .admin-input:disabled{opacity:.4;}
+  .admin-pick-label-input{
+    width:100%;min-width:160px;font-family:'Inter',sans-serif;font-size:12.5px;font-weight:600;
+    padding:5px 8px;margin:1px 0;
+  }
   .admin-select{
     background:var(--surface-raised);border:1px solid var(--line);border-radius:6px;
     padding:6px 8px;color:var(--text);font-size:12.5px;font-family:'Inter',sans-serif;
@@ -1668,7 +1672,7 @@ function renderAdminPickEditor(userId, username, picks){
     <tr data-key="${key}" data-week="${weekLabelForPick(pick)}">
       <td>
         <div class="admin-pick-game">${pick.gameSummary || ''}</div>
-        <div class="admin-pick-desc">${pick.pickLabel || ''}</div>
+        <input class="admin-input admin-pick-label-input" type="text" value="${(pick.pickLabel || '').replace(/"/g, '&quot;')}" placeholder="Pick label" data-field="pickLabel">
         <div class="admin-pick-meta">${pick.market || '?'} · ${pick.side || '?'} · ${pick.dateKey || 'no date'}</div>
       </td>
       <td><input class="admin-input" type="number" step="0.5" value="${(pick.point === null || pick.point === undefined) ? '' : pick.point}" placeholder="—" data-field="point"></td>
@@ -1789,6 +1793,7 @@ function renderAdminPickEditor(userId, username, picks){
         const lockedVal = row.querySelector('[data-field="locked"]').checked;
         const pointRaw = row.querySelector('[data-field="point"]').value;
         const priceVal = row.querySelector('[data-field="priceText"]').value.trim();
+        const labelVal = row.querySelector('[data-field="pickLabel"]').value.trim();
         const mortalField = row.querySelector('[data-field="mortal"]');
         updatedPicks[key] = {
           ...original,
@@ -1796,6 +1801,7 @@ function renderAdminPickEditor(userId, username, picks){
           locked: lockedVal,
           point: pointRaw === '' ? null : Number(pointRaw),
           priceText: priceVal || original.priceText || '',
+          pickLabel: labelVal || original.pickLabel || '',
           mortal: mortalField ? mortalField.checked : !!original.mortal,
         };
       });
