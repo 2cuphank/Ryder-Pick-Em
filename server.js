@@ -178,7 +178,7 @@ async function writeGradedEvents(data) {
 // for a browsing board — override via RUNDOWN_CACHE_MINUTES if you want
 // it fresher (lower) or cheaper to run (higher).
 let cache = { data: null, fetchedAt: 0 };
-const CACHE_TTL_MS = (Number(process.env.RUNDOWN_CACHE_MINUTES) || 5) * 60 * 1000;
+const CACHE_TTL_MS = (Number(process.env.RUNDOWN_CACHE_MINUTES) || 1) * 60 * 1000;
 
 function isoDate(d) {
   return d.toISOString().slice(0, 10);
