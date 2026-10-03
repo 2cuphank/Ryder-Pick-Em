@@ -472,6 +472,15 @@
   }
   .admin-save-btn:hover{filter:brightness(1.06);}
 
+  .admin-export-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:18px 0 20px;}
+  .admin-export-btn{
+    background:transparent;border:1px solid var(--gold-dim);color:var(--gold);padding:10px 18px;
+    border-radius:8px;font-weight:700;font-size:13px;cursor:pointer;font-family:'Inter',sans-serif;
+  }
+  .admin-export-btn:hover{border-color:var(--gold);background:rgba(242,169,59,0.08);}
+  .admin-export-btn:disabled{opacity:.5;cursor:default;}
+  .admin-export-status{font-size:11.5px;color:var(--text-faint);}
+
   .admin-add-pick{
     margin-top:24px;padding:18px;background:var(--surface);
     border:1px solid var(--line);border-radius:10px;
@@ -676,6 +685,10 @@
     <div class="board-head">
       <h2>Admin — Edit Picks</h2>
       <div class="updated" id="adminStamp"></div>
+    </div>
+    <div class="admin-export-bar">
+      <button class="admin-export-btn" id="exportStandingsBtn" type="button">⬇ Export Standings PDF</button>
+      <span class="admin-export-status" id="exportStandingsStatus"></span>
     </div>
     <div id="adminBody"></div>
   </div>
@@ -1626,6 +1639,165 @@ viewBobDiacoBtn.onclick = ()=> switchView('bobdiaco');
 viewAdminBtn.onclick = ()=> switchView('admin');
 
 /* ========================= Admin ========================= */
+/* ==================== Admin: export standings to PDF ==================== */
+// jsPDF + its autotable plugin are only ever needed by an admin clicking
+// this one button, so they're loaded on demand rather than on every page
+// load. Cached after the first load so a second export doesn't re-fetch.
+let pdfLibsPromise = null;
+function loadScript(src){
+  return new Promise((resolve, reject)=>{
+    const s = document.createElement('script');
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = ()=> reject(new Error(`Could not load ${src}`));
+    document.head.appendChild(s);
+  });
+}
+function ensurePdfLibs(){
+  if(!pdfLibsPromise){
+    pdfLibsPromise = (async ()=>{
+      await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js');
+    })();
+  }
+  return pdfLibsPromise;
+}
+
+// Matches the on-screen colors (see :root CSS vars and lb-pick-* classes),
+// translated to RGB triples for jsPDF's fillColor.
+const PDF_COLORS = {
+  gold: [242, 169, 59],
+  goldText: [26, 18, 6],
+  win: [205, 235, 215],
+  winText: [30, 90, 55],
+  loss: [245, 210, 200],
+  lossText: [130, 40, 25],
+  pending: [250, 232, 200],
+  pendingText: [140, 95, 15],
+  headerText: [255, 255, 255],
+};
+
+function pdfStatusColors(status){
+  if(status === 'win') return { fill: PDF_COLORS.win, text: PDF_COLORS.winText };
+  if(status === 'loss') return { fill: PDF_COLORS.loss, text: PDF_COLORS.lossText };
+  return { fill: PDF_COLORS.pending, text: PDF_COLORS.pendingText }; // pending or push
+}
+
+// Builds one autotable section (a title line plus a table) starting at
+// `startY`, returns the Y position after it so the next section can stack
+// below it. `cellColors[rowIndex][colIndex]` is optional — when present,
+// it colors that specific pick cell (Bob Diaco's table); Pat Hill's table
+// passes no cellColors and just gets plain record cells.
+function addStandingsSection(doc, { title, weeks, rows, cellColors }, startY){
+  doc.setFontSize(13);
+  doc.setTextColor(26, 18, 6);
+  doc.setFont(undefined, 'bold');
+  doc.text(title, 40, startY);
+
+  const head = [['#', 'User', ...weeks, 'Record', 'Win %']];
+  const body = rows.map((r, i)=>{
+    const weekCells = weeks.map(w => r._weekText[w] ?? '—');
+    return [String(i+1), r.username, ...weekCells, r._recordText, r._winPctText];
+  });
+
+  doc.autoTable({
+    startY: startY + 10,
+    head,
+    body,
+    theme: 'grid',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, lineColor: [225, 220, 205], lineWidth: 0.5 },
+    headStyles: { fillColor: PDF_COLORS.gold, textColor: PDF_COLORS.goldText, fontStyle: 'bold' },
+    columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 90 } },
+    didParseCell: (data)=>{
+      if(!cellColors || data.section !== 'body') return;
+      const colors = cellColors[data.row.index] && cellColors[data.row.index][data.column.index];
+      if(colors){
+        data.cell.styles.fillColor = colors.fill;
+        data.cell.styles.textColor = colors.text;
+        data.cell.styles.fontStyle = 'bold';
+      }
+    },
+  });
+
+  return doc.lastAutoTable.finalY + 28;
+}
+
+async function exportStandingsPdf(){
+  const btn = document.getElementById('exportStandingsBtn');
+  const statusEl = document.getElementById('exportStandingsStatus');
+  if(btn) btn.disabled = true;
+  if(statusEl) statusEl.textContent = 'Loading data…';
+
+  try{
+    const [pickemRes, bobdiacoRes] = await Promise.all([
+      apiFetch('/api/leaderboard'),
+      apiFetch('/api/leaderboard?mode=mortal'),
+    ]);
+    if(!pickemRes.res.ok || !pickemRes.body.ok) throw new Error(pickemRes.body.error || 'Could not load Pat Hill Standings.');
+    if(!bobdiacoRes.res.ok || !bobdiacoRes.body.ok) throw new Error(bobdiacoRes.body.error || 'Could not load Bob Diaco Standings.');
+
+    const pickemWeeks = pickemRes.body.weeks || [];
+    const pickemRows = (pickemRes.body.rows || []).filter(r => isPickemUsername(r.username));
+    pickemRows.forEach(r=>{
+      r._weekText = {};
+      pickemWeeks.forEach(w=>{
+        const stat = r.weeks[w];
+        r._weekText[w] = stat ? `${stat.wins}-${stat.losses}${stat.pushes ? '-' + stat.pushes : ''}` : '—';
+      });
+      r._recordText = `${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}`;
+      r._winPctText = r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%';
+    });
+
+    const bobdiacoWeeks = bobdiacoRes.body.weeks || [];
+    const bobdiacoRows = (bobdiacoRes.body.rows || []).filter(r => isBobDiacoUsername(r.username));
+    const bobdiacoCellColors = [];
+    bobdiacoRows.forEach((r, rowIdx)=>{
+      r._weekText = {};
+      bobdiacoCellColors[rowIdx] = {};
+      bobdiacoWeeks.forEach((w, weekIdx)=>{
+        const pick = r.picks && r.picks[w];
+        r._weekText[w] = pick ? pick.pickLabel : '—';
+        if(pick) bobdiacoCellColors[rowIdx][weekIdx + 2] = pdfStatusColors(pick.status); // +2 skips #, User columns
+      });
+      r._recordText = `${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}`;
+      r._winPctText = r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%';
+    });
+
+    if(statusEl) statusEl.textContent = 'Building PDF…';
+    await ensurePdfLibs();
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+
+    doc.setFontSize(18);
+    doc.setTextColor(26, 18, 6);
+    doc.setFont(undefined, 'bold');
+    doc.text("Ryder Pick 'Em — Standings", 40, 40);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.setTextColor(90, 90, 90);
+    doc.text(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`, 40, 56);
+
+    let y = addStandingsSection(doc, { title: 'Pat Hill Standings', weeks: pickemWeeks, rows: pickemRows }, 84);
+
+    // Bob Diaco's table is usually wider (full pick labels, not just a
+    // record) — start it on a fresh page rather than letting it get
+    // squeezed under whatever room is left below Pat Hill's table.
+    doc.addPage();
+    y = addStandingsSection(doc, { title: 'Bob Diaco Standings', weeks: bobdiacoWeeks, rows: bobdiacoRows, cellColors: bobdiacoCellColors }, 40);
+
+    const dateStamp = new Date().toISOString().slice(0, 10);
+    doc.save(`ryder-pickem-standings-${dateStamp}.pdf`);
+
+    if(statusEl) statusEl.textContent = 'Downloaded.';
+    setTimeout(()=>{ if(statusEl) statusEl.textContent = ''; }, 4000);
+  }catch(err){
+    if(statusEl) statusEl.textContent = `Failed: ${err.message}`;
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+
 async function loadAdminUserList(){
   adminStamp.textContent = '';
   adminBody.innerHTML = `<div class="lb-loading">Loading users…</div>`;
@@ -2122,6 +2294,9 @@ function renderNotice(){
 (async function init(){
   const adminPickForSelect = document.getElementById('adminPickForSelect');
   if(adminPickForSelect) adminPickForSelect.onchange = handleAdminPickForChange;
+
+  const exportStandingsBtn = document.getElementById('exportStandingsBtn');
+  if(exportStandingsBtn) exportStandingsBtn.onclick = exportStandingsPdf;
 
   await restore();
   renderAuthArea();
