@@ -1819,11 +1819,19 @@ async function exportStandingsPdf(){
       + bottomMargin;
 
     const widestWeekCount = Math.max(pickemWeeks.length, bobdiacoWeeks.length, 1);
-    const pageWidth = L.marginX * 2 + L.numColWidth + L.userColWidth
+    let pageWidth = L.marginX * 2 + L.numColWidth + L.userColWidth
       + widestWeekCount * L.weekColWidth + L.recordColWidth + L.winPctColWidth;
 
+    // Force a genuinely horizontal (landscape) page no matter how the raw
+    // content dimensions come out — a short season (few weeks) with a lot
+    // of users could otherwise end up taller than it is wide.
+    if(pageWidth < pageHeight * 1.3) pageWidth = pageHeight * 1.3;
+
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ unit: 'pt', format: [pageWidth, pageHeight] });
+    // `orientation` has to be passed explicitly alongside a custom format
+    // array — otherwise jsPDF applies its portrait default on top of it,
+    // which can re-flip a wide array back into a tall page.
+    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: [pageWidth, pageHeight] });
 
     doc.setFontSize(18);
     doc.setTextColor(26, 18, 6);
