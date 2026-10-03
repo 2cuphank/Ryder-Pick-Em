@@ -46,7 +46,8 @@
     backdrop-filter:blur(8px);
   }
   .header-inner{max-width:1180px;margin:0 auto;display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap;}
-  .brand{display:flex;align-items:center;gap:12px;}
+  .brand{display:flex;align-items:center;gap:12px;flex-wrap:wrap;row-gap:8px;}
+  .brand .auth-area{margin-left:4px;}
   .brand-mark{
     width:38px;height:38px;border-radius:6px;
     background:linear-gradient(160deg,var(--gold),#c4801f);
@@ -575,9 +576,9 @@
         <h1>Ryder Pick 'Em</h1>
         <div class="tag">College Football Odds Board</div>
       </div>
+      <div class="auth-area" id="authArea"></div>
     </div>
     <div class="header-actions">
-      <div class="auth-area" id="authArea"></div>
       <button class="slip-toggle" id="slipToggle">
         Bet Slip <span class="slip-count" id="slipCountBadge">0</span>
       </button>
@@ -1688,7 +1689,7 @@ function pdfStatusColors(status){
 // below it. `cellColors[rowIndex][colIndex]` is optional — when present,
 // it colors that specific pick cell (Bob Diaco's table); Pat Hill's table
 // passes no cellColors and just gets plain record cells.
-function addStandingsSection(doc, { title, weeks, rows, cellColors }, startY){
+function addStandingsSection(doc, { title, weeks, rows, cellColors, weekColWidth }, startY){
   doc.setFontSize(13);
   doc.setTextColor(26, 18, 6);
   doc.setFont(undefined, 'bold');
@@ -1700,14 +1701,21 @@ function addStandingsSection(doc, { title, weeks, rows, cellColors }, startY){
     return [String(i+1), r.username, ...weekCells, r._recordText, r._winPctText];
   });
 
+  const weekColumnStyles = {};
+  weeks.forEach((_, i)=>{ weekColumnStyles[i + 2] = { cellWidth: weekColWidth }; });
+
   doc.autoTable({
     startY: startY + 10,
     head,
     body,
     theme: 'grid',
-    styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, lineColor: [225, 220, 205], lineWidth: 0.5 },
+    // The page is already sized to fit everything, so a table is never
+    // allowed to spill onto a second page of its own.
+    pageBreak: 'avoid',
+    rowPageBreak: 'avoid',
+    styles: { font: 'helvetica', fontSize: 9, cellPadding: 5, lineColor: [225, 220, 205], lineWidth: 0.5, overflow: 'linebreak' },
     headStyles: { fillColor: PDF_COLORS.gold, textColor: PDF_COLORS.goldText, fontStyle: 'bold' },
-    columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 90 } },
+    columnStyles: { 0: { cellWidth: 22 }, 1: { cellWidth: 90 }, ...weekColumnStyles },
     didParseCell: (data)=>{
       if(!cellColors || data.section !== 'body') return;
       const colors = cellColors[data.row.index] && cellColors[data.row.index][data.column.index];
@@ -1719,7 +1727,7 @@ function addStandingsSection(doc, { title, weeks, rows, cellColors }, startY){
     },
   });
 
-  return doc.lastAutoTable.finalY + 28;
+  return doc.lastAutoTable.finalY + 36;
 }
 
 async function exportStandingsPdf(){
@@ -1766,8 +1774,20 @@ async function exportStandingsPdf(){
     if(statusEl) statusEl.textContent = 'Building PDF…';
     await ensurePdfLibs();
 
+    // Both tables need to land on one page, and their combined height
+    // depends on how many weeks and users are in each — so the page is
+    // sized generously up front (a big single canvas) rather than a fixed
+    // standard paper size, which is what would force a second page once
+    // a season has enough weeks. PDF viewers/printers scale a page like
+    // this to fit automatically, same as any other oversized page.
+    const pickemTableHeight = 34 + (pickemRows.length + 1) * 22;
+    const bobdiacoTableHeight = 34 + (bobdiacoRows.length + 1) * 34; // taller rows: pick labels can wrap to 2 lines
+    const pageHeight = Math.max(700, 110 + pickemTableHeight + 36 + bobdiacoTableHeight + 40);
+    const weekColWidth = 120;
+    const pageWidth = Math.max(900, 160 + Math.max(pickemWeeks.length, bobdiacoWeeks.length) * weekColWidth + 110);
+
     const { jsPDF } = window.jspdf;
-    const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+    const doc = new jsPDF({ unit: 'pt', format: [pageWidth, pageHeight] });
 
     doc.setFontSize(18);
     doc.setTextColor(26, 18, 6);
@@ -1778,13 +1798,8 @@ async function exportStandingsPdf(){
     doc.setTextColor(90, 90, 90);
     doc.text(`Generated ${new Date().toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })}`, 40, 56);
 
-    let y = addStandingsSection(doc, { title: 'Pat Hill Standings', weeks: pickemWeeks, rows: pickemRows }, 84);
-
-    // Bob Diaco's table is usually wider (full pick labels, not just a
-    // record) — start it on a fresh page rather than letting it get
-    // squeezed under whatever room is left below Pat Hill's table.
-    doc.addPage();
-    y = addStandingsSection(doc, { title: 'Bob Diaco Standings', weeks: bobdiacoWeeks, rows: bobdiacoRows, cellColors: bobdiacoCellColors }, 40);
+    const y1 = addStandingsSection(doc, { title: 'Pat Hill Standings', weeks: pickemWeeks, rows: pickemRows, weekColWidth }, 84);
+    addStandingsSection(doc, { title: 'Bob Diaco Standings', weeks: bobdiacoWeeks, rows: bobdiacoRows, cellColors: bobdiacoCellColors, weekColWidth }, y1);
 
     const dateStamp = new Date().toISOString().slice(0, 10);
     doc.save(`ryder-pickem-standings-${dateStamp}.pdf`);
