@@ -1657,7 +1657,7 @@ function ensurePdfLibs(){
   if(!pdfLibsPromise){
     pdfLibsPromise = (async ()=>{
       await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js');
-      await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf-autotable.min.js');
+      await loadScript('https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js');
     })();
   }
   return pdfLibsPromise;
