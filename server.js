@@ -53,7 +53,11 @@ if (!SESSION_SECRET) {
 }
 
 // --- Body parsing + sessions (needed for login/signup and saving picks) ---
-app.use(express.json());
+// Express's default JSON body limit is 100kb. A user's full pick list is sent
+// in one request on every save (and the admin editor sends the whole table),
+// so once someone has enough picks that default gets exceeded and saves fail
+// with a 413. Raised well above any realistic pick list.
+app.use(express.json({ limit: '5mb' }));
 app.use(session({
   secret: SESSION_SECRET || 'gridiron-slate-insecure-dev-secret',
   resave: false,
