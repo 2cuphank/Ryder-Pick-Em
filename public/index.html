@@ -369,7 +369,15 @@
 
   /* ---------- Leaderboard ---------- */
   .lb-loading{color:var(--text-faint);font-size:13.5px;text-align:center;padding:40px 20px;line-height:1.6;}
-  .lb-table{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--line);border-radius:10px;overflow:hidden;}
+  /* Fixed-height scroll box: the table scrolls inside it (both directions)
+     instead of the page. Header row sticks to the top; # / User stick left;
+     Record / Win % stick right. */
+  .lb-scroll{
+    max-height:calc(100vh - 230px);max-height:calc(100dvh - 230px);min-height:200px;
+    overflow:auto;-webkit-overflow-scrolling:touch;
+    border:1px solid var(--line);border-radius:10px;background:var(--surface);
+  }
+  .lb-table{width:100%;border-collapse:separate;border-spacing:0;background:var(--surface);}
   .lb-table th{
     text-align:left;font-size:10.5px;color:var(--text-faint);text-transform:uppercase;
     letter-spacing:.6px;padding:12px 14px;border-bottom:1px solid var(--line);font-weight:600;
@@ -377,7 +385,16 @@
   }
   .lb-table td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:14px;}
   .lb-table tr:last-child td{border-bottom:none;}
-  .lb-table td:first-child{font-family:'IBM Plex Mono',monospace;color:var(--text-faint);width:36px;}
+  .lb-table td:nth-child(2){max-width:150px;overflow:hidden;text-overflow:ellipsis;}
+  .lb-table td:first-child{font-family:'IBM Plex Mono',monospace;color:var(--text-faint);}
+  .lb-table thead th{position:sticky;top:0;z-index:3;background:var(--surface);}
+  /* anchored columns */
+  .lb-table th:nth-child(1), .lb-table td:nth-child(1){position:sticky;left:0;width:44px;min-width:44px;max-width:44px;z-index:2;background:var(--surface);}
+  .lb-table th:nth-child(2), .lb-table td:nth-child(2){position:sticky;left:44px;z-index:2;background:var(--surface);box-shadow:1px 0 0 var(--line);}
+  .lb-table .lb-total-record-col{position:sticky;right:78px;min-width:84px;z-index:2;}
+  .lb-table .lb-total-winpct-col{position:sticky;right:0;width:78px;min-width:78px;z-index:2;}
+  .lb-table thead th:nth-child(1), .lb-table thead th:nth-child(2),
+  .lb-table thead .lb-total-record-col, .lb-table thead .lb-total-winpct-col{z-index:4;}
   .lb-table td:nth-child(2){font-weight:600;white-space:nowrap;}
   .lb-table tr:nth-child(1) td:first-child{color:var(--gold);}
 
@@ -402,9 +419,9 @@
      divider and a slightly raised background, since they're the summary
      the leaderboard is ultimately sorted by. */
   .lb-total-header, td.lb-total-record{border-left:1px solid var(--line);}
-  .lb-total-header{background:rgba(242,169,59,0.05);}
+  .lb-table th.lb-total-header{background:linear-gradient(rgba(242,169,59,0.05),rgba(242,169,59,0.05)),var(--surface);}
   td.lb-total-record, td.lb-total-winpct{
-    background:rgba(242,169,59,0.04);font-family:'IBM Plex Mono',monospace;color:var(--text-dim);white-space:nowrap;
+    background:linear-gradient(rgba(242,169,59,0.05),rgba(242,169,59,0.05)),var(--surface);font-family:'IBM Plex Mono',monospace;color:var(--text-dim);white-space:nowrap;
   }
   td.lb-total-winpct{font-weight:700;text-align:right;}
 
@@ -570,10 +587,9 @@
     .odds-btn .line{font-size:11.5px;}
     .odds-btn .price{font-size:9.5px;}
 
-    /* Wide tables scroll horizontally instead of squeezing illegibly */
-    .lb-table{display:block;overflow-x:auto;-webkit-overflow-scrolling:touch;white-space:nowrap;}
-    .lb-table thead{display:table-header-group;}
-    .lb-table tbody{display:table-row-group;}
+    /* Wide tables scroll inside .lb-scroll instead of squeezing illegibly */
+    .lb-table{width:auto;min-width:100%;white-space:nowrap;}
+    .lb-scroll{max-height:calc(100dvh - 200px);}
 
     .modal{padding:18px;}
     .saved-card{flex-direction:column;align-items:stretch;gap:10px;}
@@ -2329,21 +2345,21 @@ function renderLeaderboardTable(container, weeks, rows, emptyMessageHtml, mode =
         <td>${i+1}</td>
         <td><button class="lb-username-btn" type="button" data-user-id="${r.id}" data-username="${r.username}">${r.username}</button></td>
         ${weekCellsHtml}
-        <td class="lb-total-record">${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}</td>
-        <td class="lb-total-winpct">${r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%'}</td>
+        <td class="lb-total-record lb-total-record-col">${r.total.wins}-${r.total.losses}${r.total.pushes ? '-' + r.total.pushes : ''}</td>
+        <td class="lb-total-winpct lb-total-winpct-col">${r.total.winPct === null ? '—' : r.total.winPct.toFixed(1) + '%'}</td>
       </tr>
     `;
   }).join('');
 
   container.innerHTML = `
-    <table class="lb-table">
+    <div class="lb-scroll"><table class="lb-table">
       <thead>
         <tr>
-          <th>#</th><th>User</th>${weekHeadersHtml}<th class="lb-total-header">Record</th><th class="lb-total-header">Win %</th>
+          <th>#</th><th>User</th>${weekHeadersHtml}<th class="lb-total-header lb-total-record-col">Record</th><th class="lb-total-header lb-total-winpct-col">Win %</th>
         </tr>
       </thead>
       <tbody>${rowsHtml}</tbody>
-    </table>
+    </table></div>
   `;
   container.querySelectorAll('.lb-username-btn').forEach(btn=>{
     btn.onclick = ()=> openProfileModal(btn.dataset.userId, btn.dataset.username);
