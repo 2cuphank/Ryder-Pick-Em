@@ -732,7 +732,7 @@
     </div>
     <div class="admin-import-panel">
       <div class="admin-add-pick-title">Import picks from a Word document</div>
-      <div class="admin-add-hint">Reads the weekly picks document and matches each line to a game on the board. Imports Dave (as Skell Presidente) and Jack (as Jacky Tables) only; everyone else is ignored. You review everything before it's saved.</div>
+      <div class="admin-add-hint">Reads the weekly picks document and matches each line to a game on the board. Imports Dave (as Skell Presidente), Jack (as Jacky Tables), Dan (as Pledge Master Dan), Rico (as Rico Bo$co), Zuppe and Hank; anyone else is ignored. You review everything before it's saved.</div>
       <div class="admin-export-bar" style="margin:8px 0 0;">
         <input type="file" id="importDocxFile" accept=".docx">
         <button class="admin-export-btn" id="importDocxBtn" type="button">Read document</button>
@@ -2172,6 +2172,12 @@ const IMPORT_PERSON_MAP = {
   'jack': 'Jacky Tables',
   'jacky': 'Jacky Tables',
   'jacky tables': 'Jacky Tables',
+  'dan': 'Pledge Master Dan',
+  'pledge master dan': 'Pledge Master Dan',
+  'rico': 'Rico Bo$co',
+  'rico bo$co': 'Rico Bo$co',
+  'zuppe': 'Zuppe',
+  'hank': 'Hank',
 };
 
 // Team shorthand that can't be worked out from the name itself.
@@ -2528,7 +2534,7 @@ function renderImportPreview(rows, ignoredPeople){
   const ignoredNames = Object.keys(ignoredPeople).join(', ');
 
   if(rows.length === 0){
-    box.innerHTML = `<div class="lb-loading">No picks found for Skell Presidente or Jacky Tables in that document.${ignoredCount ? `<br>Ignored ${ignoredCount} line(s) for: ${importEsc(ignoredNames)}.` : ''}</div>`;
+    box.innerHTML = `<div class="lb-loading">No picks found for any of the imported people in that document.${ignoredCount ? `<br>Ignored ${ignoredCount} line(s) for: ${importEsc(ignoredNames)}.` : ''}</div>`;
     return;
   }
 
