@@ -514,6 +514,8 @@
   .admin-editor-table tr.import-bad td{background:rgba(193,67,46,0.08);}
   .import-bad-text{color:var(--crimson);font-weight:600;font-size:12.5px;}
   .import-note{color:var(--gold);}
+  .import-picker{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;}
+  .import-picker .admin-select{max-width:260px;}
   .admin-editor-table tr.import-bad .import-note{color:var(--crimson);}
 
   .admin-add-pick{
@@ -2165,6 +2167,10 @@ function renderAdminPickEditor(userId, username, picks){
    Reads a .docx of weekly picks, matches each line to a game on the board,
    and returns picks ready to preview. Only the people mapped below are
    imported — everyone else in the document is ignored. */
+function importNormBase(s){
+  return String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/&amp;/g,'&').replace(/[^a-z0-9& ()]/g,' ').replace(/\s+/g,' ').trim();
+}
 const IMPORT_PERSON_MAP = {
   'dave': 'Skell Presidente',
   'skell': 'Skell Presidente',
@@ -2180,42 +2186,192 @@ const IMPORT_PERSON_MAP = {
   'hank': 'Hank',
 };
 
-// Team shorthand that can't be worked out from the name itself.
-const IMPORT_TEAM_ALIASES = {
-  'uofa':'arizona','kst':'kansas state','uofsc':'south carolina','uo':'oregon','msu':'michigan state',
-  'mich':'michigan','um':'miami','cu':'colorado','cincy':'cincinnati','ttu':'texas tech','bay':'baylor',
-  'gtech':'georgia tech','gt':'georgia tech','shsu':'sam houston','tem':'temple','af':'air force',
-  'lib':'liberty','mizz':'missouri','uk':'kentucky','uh':'houston','iu':'indiana','nd':'notre dame',
-  'ndsu':'north dakota state','niu':'northern illinois','app':'appalachian state','app st':'appalachian state',
-  'csu':'colorado state','asu':'arizona state','jax st':'jacksonville state','kenn st':'kennesaw state',
-  'tex st':'texas state','wash st':'washington state','wash':'washington','osu':'ohio state',
-  'wf':'wake forest','ku':'kansas','mtsu':'middle tennessee','char':'charlotte','miss st':'mississippi state',
-  'ok st':'oklahoma state','ok state':'oklahoma state','uga':'georgia','tenn':'tennessee','ulm':'louisiana monroe',
-  'fiu':'florida international','vt':'virginia tech','wku':'western kentucky','ecu':'east carolina',
-  'ole miss':'ole miss','miss':'ole miss','fresno':'fresno state','ark':'arkansas','bama':'alabama',
-  'fsu':'florida state','psu':'penn state','nw':'northwestern','neb':'nebraska','ou':'oklahoma','ut':'texas',
-  'tamu':'texas a&m','a&m':'texas a&m','sdsu':'san diego state','sjsu':'san jose state','usc':'usc',
-};
-const IMPORT_REJECT_NEXT = /^(state|st|tech|southern|northern|international|ohio|\(oh\)|\(fl\)|a&m|a&amp;m)$/;
+// MASTER TEAM LIST. One line per school:  names (as the board might write
+// them, first is the main one)  |  shorthand people use in the document.
+// Shorthand can be shared between schools (e.g. "um", "osu", "msu") — the
+// opponent in "Away @ Home" and the kickoff time sort out which one is meant.
+// To fix a school that doesn't match, add its shorthand to the right-hand side.
+const IMPORT_TEAM_LIST = `
+air force | af, airforce, air force
+akron | akr
+alabama | bama, ala, alab, crimson tide
+appalachian state, app state, appalachian st | app, app st, apps, app state, appalachian
+arizona | uofa, ua, ariz, zona
+arizona state | asu, az st, ariz st, az state
+arkansas | ark, hogs
+arkansas state | ark st, arkst, a state, ark state
+army, army west point | army
+auburn | aub
+ball state | ball st, ball state
+baylor | bay
+boise state | boise, boise st, bsu
+boston college | bc
+bowling green | bgsu, bg, bowling green
+buffalo | buff
+byu, brigham young | byu
+california, cal | cal
+ucf, central florida | ucf
+central michigan | cmu, c mich, cent mich
+charlotte | char, clt
+cincinnati | cincy, cin
+clemson | clem
+coastal carolina | ccu, coastal, coastal car
+colorado | cu, colo
+colorado state | csu, colo st, colo state
+duke | duke
+east carolina | ecu, e carolina
+eastern michigan | emu, e mich, east mich
+florida | uf, fla
+florida atlantic | fau, fla atl
+florida international, fiu | fiu
+florida state | fsu, fla st
+fresno state | fresno, fres st, fresno st
+georgia | uga
+georgia southern | ga so, gaso, ga southern, ga sou
+georgia state | ga st, gsu, ga state
+georgia tech | gtech, gt, ga tech, g tech
+hawaii, hawai i | hawaii, haw
+houston | uh, hou
+illinois | ill, uofi
+indiana | iu, ind
+iowa | iowa
+iowa state | isu, iowa st
+jacksonville state | jax st, jsu, jacksonville st, jax state
+james madison | jmu
+kansas | ku
+kansas state | kst, ksu, k state, kansas st
+kennesaw state | kenn st, kenn, kennesaw, kennesaw st
+kent state | kent, kent st
+kentucky | uk
+liberty | lib
+louisiana, louisiana lafayette, ul lafayette | ull, lafayette, la lafayette, louisiana, ragin cajuns
+louisiana monroe, ul monroe, louisiana-monroe | ulm, la monroe
+louisiana tech | la tech, latech
+louisville | lou, lville
+lsu | lsu
+marshall | marsh
+maryland | umd, md
+massachusetts, umass | umass
+memphis | mem
+miami, miami (fl), miami fl | um, mia, miami, canes, miami fl
+miami (oh), miami oh, miami ohio | miami oh, m oh, miami ohio, moh
+michigan | mich, um
+michigan state | msu, mich st, mich state
+middle tennessee, middle tennessee state | mtsu, mt, mid tenn, middle tenn, middle tn
+minnesota | minn, umn
+mississippi state | miss st, msst, mstate, msu, miss state
+missouri | mizz, mizzou
+missouri state | mo st, mo state, mosu
+navy | navy
+nc state, north carolina state | ncsu, nc st, ncst, nc state
+nebraska | neb
+nevada | nev
+new mexico | unm, nm
+new mexico state | nmsu, nm st
+north carolina | unc
+north texas | unt, n texas
+northern illinois | niu, n illinois, no illinois
+northwestern | nw
+notre dame | nd
+ohio | ohio, ohio u
+ohio state | osu, tosu, ohio st
+oklahoma | ou, okla
+oklahoma state | ok st, okst, okla st, osu, ok state, okla state
+old dominion | odu
+ole miss, mississippi | miss, ole miss
+oregon | uo, ore
+oregon state | ore st, orst, osu, oregon st
+penn state | psu
+pittsburgh, pitt | pitt
+purdue | pur
+rice | rice
+rutgers | rut, ru
+sam houston, sam houston state | shsu, sam, sam houston
+san diego state | sdsu, sd st, san diego st
+san jose state | sjsu, sj st, san jose st
+smu | smu
+south alabama | usa, s ala, s alabama, south ala
+south carolina | uofsc, sc, scar, s carolina
+south florida | usf, s florida, s fla
+southern miss, southern mississippi | usm, so miss, s miss
+stanford | stan
+syracuse | cuse, syr
+tcu | tcu
+temple | tem
+tennessee | tenn, vols
+texas | ut, tex
+texas a&m | tamu, a&m, tam, aggies, tx a&m
+texas state | tex st, txst, tx st, texas st
+texas tech | ttu, texas t
+toledo | tol
+troy | troy
+tulane | tul
+tulsa | tulsa
+uab | uab
+ucla | ucla
+uconn, connecticut | uconn, conn
+unlv | unlv
+usc, southern california | usc, southern cal, so cal
+utep | utep
+utsa | utsa
+utah | utah
+utah state | usu, utah st
+vanderbilt | vandy, vu
+virginia | uva, va
+virginia tech | vt, vtech, va tech
+wake forest | wf, wake
+washington | uw, wash
+washington state | wsu, wash st, wazzu
+west virginia | wvu, w va, w virginia
+western kentucky | wku, w ky, w kentucky, western ky
+western michigan | wmu, w mich, west mich
+wisconsin | wisc
+wyoming | wyo
+delaware | del
+sacramento state | sac st, sac, sacramento st
+north dakota state | ndsu, nd st, ndst
+south dakota state | sdst, sd state, jackrabbits
+montana | mont
+montana state | mont st, msu
+`;
 
-function importNorm(s){
-  return String(s || '').toLowerCase().replace(/&amp;/g,'&').replace(/[^a-z0-9& ()]/g,' ').replace(/\s+/g,' ').trim();
-}
+const IMPORT_TEAM_ALIASES = (function(){
+  const map = {};
+  IMPORT_TEAM_LIST.trim().split('\n').forEach(line => {
+    const parts = line.split('|');
+    if(parts.length < 2) return;
+    const names = parts[0].split(',').map(x => importNormBase(x)).filter(Boolean);
+    parts[1].split(',').map(x => importNormBase(x)).filter(Boolean).forEach(ab => {
+      (map[ab] = map[ab] || []);
+      names.forEach(n => { if(!map[ab].includes(n)) map[ab].push(n); });
+    });
+    // a school's own name always works as shorthand for itself
+    names.forEach(n => { (map[n] = map[n] || []); names.forEach(m => { if(!map[n].includes(m)) map[n].push(m); }); });
+  });
+  return map;
+})();
+const IMPORT_REJECT_NEXT = /^(state|st|tech|southern|northern|international|ohio|\(oh\)|a&m|a&amp;m)$/;
+
+function importNorm(s){ return importNormBase(s); }
 
 // 0-100: how well does the document's shorthand fit this team's name?
 function importTeamScore(abbr, teamName){
   const a = importNorm(abbr);
   const n = importNorm(teamName);
   if(!a || !n) return 0;
-  const target = IMPORT_TEAM_ALIASES[a];
-  if(target){
-    if(n === target) return 100;
-    if(n.startsWith(target + ' ')){
-      const next = n.slice(target.length + 1).split(' ')[0];
-      if(IMPORT_REJECT_NEXT.test(next) && !IMPORT_REJECT_NEXT.test(target.split(' ').pop())) return 0;
-      return 95;
-    }
-    return 0;
+  const targets = IMPORT_TEAM_ALIASES[a];
+  if(targets){
+    let best = 0;
+    targets.forEach(target => {
+      if(n === target){ best = Math.max(best, 100); return; }
+      if(n.startsWith(target + ' ')){
+        const next = n.slice(target.length + 1).split(' ')[0];
+        if(IMPORT_REJECT_NEXT.test(next) && !IMPORT_REJECT_NEXT.test(target.split(' ').pop())) return;
+        best = Math.max(best, 95);
+      }
+    });
+    // A shorthand in the master list only ever means the schools listed for it.
+    return best;
   }
   const nWords = n.split(' ');
   if(n === a) return 100;
@@ -2408,7 +2564,7 @@ function importBasePick(g){
 }
 
 // Turns one parsed segment into a pick (or an explanation of why not).
-function importBuildPick(seg, g){
+function importBuildPick(seg, g, forcedSide){
   const ko = g.kickoffISO ? new Date(g.kickoffISO).getTime() : null;
   const sidesFor = abbr => ({ away: importTeamScore(abbr, g.away.name), home: importTeamScore(abbr, g.home.name) });
 
@@ -2428,10 +2584,10 @@ function importBuildPick(seg, g){
 
   if(seg.kind === 'spread' || seg.kind === 'ml' || seg.kind === 'tt'){
     const sc = sidesFor(seg.team);
-    if(Math.max(sc.away, sc.home) < 50 || sc.away === sc.home){
-      return { ok: false, note: `Couldn't tell which team "${seg.team || '(none)'}" is in ${g.away.name} @ ${g.home.name}.` };
+    if(!forcedSide && (Math.max(sc.away, sc.home) < 50 || sc.away === sc.home)){
+      return { ok: false, needsTeam: true, note: `Couldn't tell which team "${seg.team || '(none)'}" is in ${g.away.name} @ ${g.home.name}.` };
     }
-    const teamSide = sc.away > sc.home ? 'away' : 'home';
+    const teamSide = forcedSide || (sc.away > sc.home ? 'away' : 'home');
     const team = g[teamSide];
 
     if(seg.kind === 'ml'){
@@ -2510,10 +2666,10 @@ function importMatchAll(items, games){
       return;
     }
     segs.forEach(seg => {
-      const base = { username, line: item.rawLine, segment: seg.raw, mortal: !!seg.mortal };
+      const base = { username, line: item.rawLine, segment: seg.raw, seg, mortal: !!seg.mortal };
       if(!gameOk || !chosen){ rows.push({ ...base, ok: false, note: gameNote }); return; }
       const built = importBuildPick(seg, chosen.g);
-      if(!built.ok){ rows.push({ ...base, ok: false, note: built.note }); return; }
+      if(!built.ok){ rows.push({ ...base, ok: false, note: built.note, pendingGameId: built.needsTeam ? chosen.g.id : null }); return; }
       rows.push({ ...base, ok: true, warn: !!built.warn || !!gameNote, manual: !!built.manual,
         note: [built.note, gameNote].filter(Boolean).join(' '), pick: built.pick });
     });
@@ -2521,20 +2677,59 @@ function importMatchAll(items, games){
   return { rows, ignoredPeople };
 }
 /*IMPORT_CORE_END*/
-
 /* ---- Import UI (Admin tab) ---- */
 let importRows = [];
+let importGames = [];
+let importIgnored = {};
 
 function importEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function importPickerHtml(r){
+  if(!r.seg) return '';
+  const opts = importGames.map(g => {
+    const ko = g.kickoff || '';
+    return `<option value="${importEsc(g.id)}" ${String(r.pendingGameId) === String(g.id) ? 'selected' : ''}>${importEsc((g.dateKey || '') + ' ' + ko + ' — ' + g.away.name + ' @ ' + g.home.name)}</option>`;
+  }).join('');
+  let html = `<div class="import-picker"><select class="admin-select" data-f="game" data-i="${r._i}"><option value="">Choose the game…</option>${opts}</select>`;
+  const g = importGames.find(x => String(x.id) === String(r.pendingGameId));
+  if(g && r.seg.kind !== 'total'){
+    html += `<select class="admin-select" data-f="team" data-i="${r._i}"><option value="">Which team?</option><option value="away">${importEsc(g.away.name)}</option><option value="home">${importEsc(g.home.name)}</option></select>`;
+  }
+  return html + `</div>`;
+}
+
+// Keep the checkboxes' current state when the table is redrawn.
+function syncImportRowsFromDom(){
+  const box = document.getElementById('importPreview');
+  box.querySelectorAll('[data-f="include"]').forEach(cb => { const r = importRows[Number(cb.dataset.i)]; if(r) r.include = cb.checked; });
+  box.querySelectorAll('[data-f="mortal"]').forEach(cb => { const r = importRows[Number(cb.dataset.i)]; if(r) r.mortal = cb.checked; });
+}
+
+function importHandPick(i, gameId, side){
+  syncImportRowsFromDom();
+  const r = importRows[i];
+  const g = importGames.find(x => String(x.id) === String(gameId));
+  if(!r || !g || !r.seg) return;
+  const built = importBuildPick(r.seg, g, side || null);
+  r.pendingGameId = g.id;
+  if(built.ok){
+    r.ok = true; r.pick = built.pick; r.manual = !!built.manual; r.warn = true; r.include = true;
+    r.note = ['Matched by hand.', built.note].filter(Boolean).join(' ');
+  } else {
+    r.ok = false; r.pick = null; r.note = built.note;
+  }
+  renderImportPreview(importRows, importIgnored);
+}
 
 function renderImportPreview(rows, ignoredPeople){
   const box = document.getElementById('importPreview');
   importRows = rows;
+  importIgnored = ignoredPeople;
   const ignoredCount = Object.values(ignoredPeople).reduce((a, b) => a + b, 0);
   const ignoredNames = Object.keys(ignoredPeople).join(', ');
 
   if(rows.length === 0){
-    box.innerHTML = `<div class="lb-loading">No picks found for any of the imported people in that document.${ignoredCount ? `<br>Ignored ${ignoredCount} line(s) for: ${importEsc(ignoredNames)}.` : ''}</div>`;
+    box.innerHTML = `<div class="lb-loading">No picks found for Skell Presidente or Jacky Tables in that document.${ignoredCount ? `<br>Ignored ${ignoredCount} line(s) for: ${importEsc(ignoredNames)}.` : ''}</div>`;
     return;
   }
 
@@ -2548,11 +2743,11 @@ function renderImportPreview(rows, ignoredPeople){
         ? `<td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-i="${r._i}" data-f="mortal" ${r.mortal ? 'checked' : ''} ${canSave ? '' : 'disabled'}></td>` : '';
       return `
         <tr class="${canSave ? (r.warn ? 'import-warn' : '') : 'import-bad'}">
-          <td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-i="${r._i}" data-f="include" ${canSave ? 'checked' : 'disabled'}></td>
+          <td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-i="${r._i}" data-f="include" ${canSave ? (r.include === false ? '' : 'checked') : 'disabled'}></td>
           <td><div class="admin-pick-game">${importEsc(r.segment || r.line)}</div><div class="admin-pick-meta">${importEsc(r.line)}</div></td>
           <td>${canSave
             ? `<div class="admin-pick-game">${importEsc(r.pick.pickLabel)}</div><div class="admin-pick-meta">${importEsc(r.pick.gameSummary)} · ${r.manual ? 'team total (manual)' : importEsc(r.pick.market)} · ${importEsc(r.pick.dateKey || '')}</div>`
-            : `<span class="import-bad-text">Not matched</span>`}
+            : `<span class="import-bad-text">Not matched</span>${importPickerHtml(r)}`}
             ${r.note ? `<div class="admin-pick-meta import-note">${importEsc(r.note)}</div>` : ''}</td>
           ${mortalCell}
         </tr>`;
@@ -2585,6 +2780,15 @@ function renderImportPreview(rows, ignoredPeople){
         const o = importRows[Number(other.dataset.i)];
         if(other !== cb && o.username === me.username && o.ok && weekLabelForPick(o.pick) === myWeek) other.checked = false;
       });
+    };
+  });
+  box.querySelectorAll('[data-f="game"]').forEach(sel => {
+    sel.onchange = () => { if(sel.value) importHandPick(Number(sel.dataset.i), sel.value, null); };
+  });
+  box.querySelectorAll('[data-f="team"]').forEach(sel => {
+    sel.onchange = () => {
+      const i = Number(sel.dataset.i);
+      if(sel.value) importHandPick(i, importRows[i].pendingGameId, sel.value);
     };
   });
   document.getElementById('importConfirmBtn').onclick = confirmImportPicks;
@@ -2664,6 +2868,7 @@ document.getElementById('importDocxBtn').onclick = async () => {
     const buf = await input.files[0].arrayBuffer();
     const paras = await importReadDocxParagraphs(buf);
     const games = Object.values(loaded).flat();
+    importGames = games.slice().sort((a, b) => String(a.kickoffISO || a.dateKey || '').localeCompare(String(b.kickoffISO || b.dateKey || '')));
     const { rows, ignoredPeople } = importMatchAll(importParseDocument(paras), games);
     statusEl.textContent = `${rows.filter(r => r.ok).length} of ${rows.length} pick(s) matched.`;
     renderImportPreview(rows, ignoredPeople);
