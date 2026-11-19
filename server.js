@@ -577,6 +577,7 @@ async function runGradingSweep() {
   users.forEach(user => {
     Object.values(user.picks || {}).forEach(pick => {
       if (!pick.locked || pick.status !== 'pending') return;
+      if (String(pick.gameId).startsWith('manual-')) return; // hand-entered: no real game to look up, graded by an admin
       if (gradedEvents.events[pick.gameId]) return; // already cached, no fetch needed
       if (!isPickEligibleForGrading(pick, now)) return;
       pendingGameIds.add(pick.gameId);

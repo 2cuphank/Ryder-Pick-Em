@@ -508,6 +508,13 @@
   .admin-export-btn:hover{border-color:var(--gold);background:rgba(242,169,59,0.08);}
   .admin-export-btn:disabled{opacity:.5;cursor:default;}
   .admin-export-status{font-size:11.5px;color:var(--text-faint);}
+  .admin-import-panel{margin:0 0 22px;padding:14px 16px;border:1px solid var(--line);border-radius:10px;background:var(--surface);}
+  .admin-import-panel input[type=file]{font-size:12.5px;color:var(--text-dim);max-width:100%;}
+  .admin-editor-table tr.import-warn td{background:rgba(242,169,59,0.07);}
+  .admin-editor-table tr.import-bad td{background:rgba(193,67,46,0.08);}
+  .import-bad-text{color:var(--crimson);font-weight:600;font-size:12.5px;}
+  .import-note{color:var(--gold);}
+  .admin-editor-table tr.import-bad .import-note{color:var(--crimson);}
 
   .admin-add-pick{
     margin-top:24px;padding:18px;background:var(--surface);
@@ -722,6 +729,16 @@
     <div class="admin-export-bar">
       <button class="admin-export-btn" id="exportStandingsBtn" type="button">⬇ Export Standings PDF</button>
       <span class="admin-export-status" id="exportStandingsStatus"></span>
+    </div>
+    <div class="admin-import-panel">
+      <div class="admin-add-pick-title">Import picks from a Word document</div>
+      <div class="admin-add-hint">Reads the weekly picks document and matches each line to a game on the board. Imports Dave (as Skell Presidente) and Jack (as Jacky Tables) only; everyone else is ignored. You review everything before it's saved.</div>
+      <div class="admin-export-bar" style="margin:8px 0 0;">
+        <input type="file" id="importDocxFile" accept=".docx">
+        <button class="admin-export-btn" id="importDocxBtn" type="button">Read document</button>
+        <span class="admin-export-status" id="importDocxStatus"></span>
+      </div>
+      <div id="importPreview"></div>
     </div>
     <div id="adminBody"></div>
   </div>
@@ -2142,6 +2159,512 @@ function renderAdminPickEditor(userId, username, picks){
     if(note) note.textContent = 'Pick added below — click "Save changes" to persist it.';
   };
 }
+
+/*IMPORT_CORE_START*/
+/* ========================= Import picks from Word =========================
+   Reads a .docx of weekly picks, matches each line to a game on the board,
+   and returns picks ready to preview. Only the people mapped below are
+   imported — everyone else in the document is ignored. */
+const IMPORT_PERSON_MAP = {
+  'dave': 'Skell Presidente',
+  'skell': 'Skell Presidente',
+  'skell presidente': 'Skell Presidente',
+  'jack': 'Jacky Tables',
+  'jacky': 'Jacky Tables',
+  'jacky tables': 'Jacky Tables',
+};
+
+// Team shorthand that can't be worked out from the name itself.
+const IMPORT_TEAM_ALIASES = {
+  'uofa':'arizona','kst':'kansas state','uofsc':'south carolina','uo':'oregon','msu':'michigan state',
+  'mich':'michigan','um':'miami','cu':'colorado','cincy':'cincinnati','ttu':'texas tech','bay':'baylor',
+  'gtech':'georgia tech','gt':'georgia tech','shsu':'sam houston','tem':'temple','af':'air force',
+  'lib':'liberty','mizz':'missouri','uk':'kentucky','uh':'houston','iu':'indiana','nd':'notre dame',
+  'ndsu':'north dakota state','niu':'northern illinois','app':'appalachian state','app st':'appalachian state',
+  'csu':'colorado state','asu':'arizona state','jax st':'jacksonville state','kenn st':'kennesaw state',
+  'tex st':'texas state','wash st':'washington state','wash':'washington','osu':'ohio state',
+  'wf':'wake forest','ku':'kansas','mtsu':'middle tennessee','char':'charlotte','miss st':'mississippi state',
+  'ok st':'oklahoma state','ok state':'oklahoma state','uga':'georgia','tenn':'tennessee','ulm':'louisiana monroe',
+  'fiu':'florida international','vt':'virginia tech','wku':'western kentucky','ecu':'east carolina',
+  'ole miss':'ole miss','miss':'ole miss','fresno':'fresno state','ark':'arkansas','bama':'alabama',
+  'fsu':'florida state','psu':'penn state','nw':'northwestern','neb':'nebraska','ou':'oklahoma','ut':'texas',
+  'tamu':'texas a&m','a&m':'texas a&m','sdsu':'san diego state','sjsu':'san jose state','usc':'usc',
+};
+const IMPORT_REJECT_NEXT = /^(state|st|tech|southern|northern|international|ohio|\(oh\)|\(fl\)|a&m|a&amp;m)$/;
+
+function importNorm(s){
+  return String(s || '').toLowerCase().replace(/&amp;/g,'&').replace(/[^a-z0-9& ()]/g,' ').replace(/\s+/g,' ').trim();
+}
+
+// 0-100: how well does the document's shorthand fit this team's name?
+function importTeamScore(abbr, teamName){
+  const a = importNorm(abbr);
+  const n = importNorm(teamName);
+  if(!a || !n) return 0;
+  const target = IMPORT_TEAM_ALIASES[a];
+  if(target){
+    if(n === target) return 100;
+    if(n.startsWith(target + ' ')){
+      const next = n.slice(target.length + 1).split(' ')[0];
+      if(IMPORT_REJECT_NEXT.test(next) && !IMPORT_REJECT_NEXT.test(target.split(' ').pop())) return 0;
+      return 95;
+    }
+    return 0;
+  }
+  const nWords = n.split(' ');
+  if(n === a) return 100;
+  if(nWords[0] === a) return 90;                        // "UCLA", "Baylor", "Tulsa"
+  if(n.startsWith(a + ' ')) return 85;
+  const aTokens = a.split(' ');
+  if(aTokens.length > 0 && aTokens.length <= nWords.length &&
+     aTokens.every((t, i) => nWords[i] && nWords[i].startsWith(t))) return 75; // "middle tenn"
+  if(a.length >= 3 && nWords[0].startsWith(a)) return 65;
+  const initials = nWords.map(w => w[0]).join('');
+  if(a.length >= 3 && initials.startsWith(a)) return 50;
+  return 0;
+}
+
+/* ---- reading the .docx (a zip file) with the browser's built-in inflate ---- */
+async function importReadDocxParagraphs(arrayBuffer){
+  const u8 = new Uint8Array(arrayBuffer);
+  const dv = new DataView(arrayBuffer);
+  let eocd = -1;
+  for(let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--){
+    if(dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  }
+  if(eocd < 0) throw new Error('That does not look like a .docx file.');
+  const count = dv.getUint16(eocd + 10, true);
+  let p = dv.getUint32(eocd + 16, true);
+  const dec = new TextDecoder();
+  let entry = null;
+  for(let i = 0; i < count; i++){
+    if(dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true);
+    const compSize = dv.getUint32(p + 20, true);
+    const nameLen = dv.getUint16(p + 28, true);
+    const extraLen = dv.getUint16(p + 30, true);
+    const commentLen = dv.getUint16(p + 32, true);
+    const localOff = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nameLen));
+    if(name === 'word/document.xml'){ entry = { method, compSize, localOff }; break; }
+    p += 46 + nameLen + extraLen + commentLen;
+  }
+  if(!entry) throw new Error('Could not find the document text inside that file.');
+  const lNameLen = dv.getUint16(entry.localOff + 26, true);
+  const lExtraLen = dv.getUint16(entry.localOff + 28, true);
+  const start = entry.localOff + 30 + lNameLen + lExtraLen;
+  let raw = u8.subarray(start, start + entry.compSize);
+  let xmlBytes;
+  if(entry.method === 0){
+    xmlBytes = raw;
+  } else if(entry.method === 8){
+    const ds = new DecompressionStream('deflate-raw');
+    const out = new Response(new Blob([raw]).stream().pipeThrough(ds));
+    xmlBytes = new Uint8Array(await out.arrayBuffer());
+  } else {
+    throw new Error('Unsupported compression in that file.');
+  }
+  const xml = dec.decode(xmlBytes);
+  const decodeEnt = s => s.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&apos;/g,"'").replace(/&amp;/g,'&');
+  const paras = xml.match(/<w:p[ >][\s\S]*?<\/w:p>/g) || [];
+  return paras.map(par => {
+    const withBreaks = par.replace(/<w:tab\/>/g, '<w:t> </w:t>').replace(/<w:br\/>/g, '<w:t> </w:t>');
+    const pieces = withBreaks.match(/<w:t(?:\s[^>]*)?>[\s\S]*?<\/w:t>/g) || [];
+    return decodeEnt(pieces.map(t => t.replace(/<[^>]+>/g, '')).join(''));
+  });
+}
+
+/* ---- splitting the text into per-person pick lines ---- */
+function importParseDocument(paragraphs){
+  const items = [];
+  let current = null;
+  paragraphs.forEach(raw => {
+    const line = String(raw || '').replace(/\s+/g, ' ').trim();
+    if(!line) return;
+    if(!line.includes('@')){
+      // A short line with no numbers is a person's name starting a section.
+      if(/^[A-Za-z][A-Za-z.$' ]{0,28}$/.test(line) && line.split(' ').length <= 3){
+        current = line.toLowerCase();
+        return;
+      }
+      // "Jack - Middle Tenn -5.5": a one-off pick with the name in front.
+      const sm = line.match(/^([A-Za-z$.']+)\s*-?\s*(.+)$/);
+      if(sm) items.push({ rawLine: line, person: sm[1].toLowerCase(), text: sm[2], hasGame: false });
+      return;
+    }
+    items.push({ rawLine: line, person: current, text: line, hasGame: true });
+  });
+  return items;
+}
+
+function importPersonUsername(person){
+  if(!person) return null;
+  if(IMPORT_PERSON_MAP[person]) return IMPORT_PERSON_MAP[person];
+  return IMPORT_PERSON_MAP[person.split(' ')[0]] || null;
+}
+
+function importParseGameLine(text){
+  const m = text.match(/^(?:(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?\s+)?(\d{1,2})(?:[:;.](\d{2}))?\s*(am|pm)\s+(.+?)\s+@\s+(.+?)\s*:\s*(.*)$/i);
+  if(!m) return null;
+  let h = Number(m[2]) % 12;
+  if(m[4].toLowerCase() === 'pm') h += 12;
+  return {
+    weekday: m[1] ? m[1].toLowerCase() : null,
+    minutes: h * 60 + Number(m[3] || 0),
+    awayAbbr: m[5].trim(),
+    homeAbbr: m[6].trim(),
+    rest: m[7],
+  };
+}
+
+// "AF -23.5 & TT o34.5" -> two segments. MORTAL can sit anywhere in one.
+function importParseSegments(rest){
+  const segs = [];
+  let lastTeam = '';
+  String(rest || '').split(/\s*&\s*/).forEach(piece => {
+    let s = piece.trim();
+    if(!s) return;
+    const mortal = /\bMORTAL\b/i.test(s);
+    s = s.replace(/\bMORTAL\b/ig, '').replace(/\s+/g, ' ').trim();
+    if(!s) return;
+    let m;
+    if((m = s.match(/^(.*?)\bTT\b\s*(o|over|u|under)\s*(\d+(?:\.\d+)?)/i))){
+      const team = m[1].trim() || lastTeam;
+      segs.push({ raw: piece.trim(), kind: 'tt', mortal, team, side: /^o/i.test(m[2]) ? 'over' : 'under', point: Number(m[3]) });
+      return;
+    }
+    if((m = s.match(/^(o|over|u|under)\s*(\d+(?:\.\d+)?)\b/i))){
+      segs.push({ raw: piece.trim(), kind: 'total', mortal, side: /^o/i.test(m[1]) ? 'over' : 'under', point: Number(m[2]) });
+      return;
+    }
+    if((m = s.match(/^(.*?)\s*\bML\b/i)) && m[1].trim()){
+      lastTeam = m[1].trim();
+      segs.push({ raw: piece.trim(), kind: 'ml', mortal, team: lastTeam });
+      return;
+    }
+    if((m = s.match(/^(.+?)\s*([+-]\s*\d+(?:\.\d+)?)\b/))){
+      lastTeam = m[1].trim();
+      const signed = m[2].replace(/\s+/g, '');
+      segs.push({ raw: piece.trim(), kind: 'spread', mortal, team: lastTeam, signed, point: Number(signed) });
+      return;
+    }
+    segs.push({ raw: piece.trim(), kind: 'unknown', mortal });
+  });
+  return segs;
+}
+
+function importKickoffET(g){
+  if(!g.kickoffISO) return null;
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: 'numeric', hour12: false, weekday: 'short' })
+    .formatToParts(new Date(g.kickoffISO));
+  const get = t => (parts.find(p => p.type === t) || {}).value;
+  return { minutes: (Number(get('hour')) % 24) * 60 + Number(get('minute')), weekday: String(get('weekday') || '').slice(0, 3).toLowerCase() };
+}
+
+function importFindGame(parsed, games){
+  const cands = [];
+  games.forEach(g => {
+    const sa = importTeamScore(parsed.awayAbbr, g.away.name);
+    const sh = importTeamScore(parsed.homeAbbr, g.home.name);
+    if(sa < 50 || sh < 50) return;
+    let score = sa + sh;
+    let timeOff = null;
+    const ko = importKickoffET(g);
+    if(ko){
+      timeOff = Math.abs(ko.minutes - parsed.minutes);
+      score += timeOff <= 10 ? 40 : -40;
+      if(parsed.weekday && ko.weekday !== parsed.weekday.slice(0, 3)) score -= 60;
+    }
+    cands.push({ g, score, timeOff });
+  });
+  cands.sort((x, y) => y.score - x.score);
+  return cands;
+}
+
+function importFindGameByTeam(abbr, games){
+  const cands = [];
+  games.forEach(g => {
+    const s = Math.max(importTeamScore(abbr, g.away.name), importTeamScore(abbr, g.home.name));
+    if(s >= 60) cands.push({ g, score: s });
+  });
+  cands.sort((x, y) => y.score - x.score);
+  return cands;
+}
+
+function importBasePick(g){
+  return {
+    gameSummary: `${g.away.name} @ ${g.home.name}`,
+    dateKey: g.dateKey || null,
+    kickoffISO: g.kickoffISO || null,
+    locked: true,
+    status: 'pending',
+  };
+}
+
+// Turns one parsed segment into a pick (or an explanation of why not).
+function importBuildPick(seg, g){
+  const ko = g.kickoffISO ? new Date(g.kickoffISO).getTime() : null;
+  const sidesFor = abbr => ({ away: importTeamScore(abbr, g.away.name), home: importTeamScore(abbr, g.home.name) });
+
+  if(seg.kind === 'total'){
+    const sideLabel = seg.side === 'over' ? 'Over' : 'Under';
+    const same = typeof g.totalPoint === 'number' && g.totalPoint === seg.point;
+    const priceParts = (seg.side === 'over' ? g.total.over : g.total.under).split(' ');
+    return {
+      ok: true,
+      note: same || typeof g.totalPoint !== 'number' ? '' : `Board total is ${g.totalPoint} now — keeping the ${seg.point} from the document.`,
+      warn: !same && typeof g.totalPoint === 'number',
+      pick: { gameId: g.id, market: 'total', side: seg.side, ...importBasePick(g),
+        pickLabel: `${g.away.name}/${g.home.name} ${sideLabel} ${seg.point}`,
+        priceText: same ? (priceParts[2] || '—') : '—', point: seg.point },
+    };
+  }
+
+  if(seg.kind === 'spread' || seg.kind === 'ml' || seg.kind === 'tt'){
+    const sc = sidesFor(seg.team);
+    if(Math.max(sc.away, sc.home) < 50 || sc.away === sc.home){
+      return { ok: false, note: `Couldn't tell which team "${seg.team || '(none)'}" is in ${g.away.name} @ ${g.home.name}.` };
+    }
+    const teamSide = sc.away > sc.home ? 'away' : 'home';
+    const team = g[teamSide];
+
+    if(seg.kind === 'ml'){
+      return { ok: true, note: '', pick: { gameId: g.id, market: 'ml', side: teamSide, ...importBasePick(g),
+        pickLabel: `${team.name} ML`, priceText: g.ml[teamSide] || '—', point: null } };
+    }
+    if(seg.kind === 'spread'){
+      const boardPoint = g.spreadPoints ? g.spreadPoints[teamSide] : null;
+      const same = typeof boardPoint === 'number' && boardPoint === seg.point;
+      const price = (g.spread[teamSide] || '').split(' ')[1];
+      return {
+        ok: true,
+        warn: typeof boardPoint === 'number' && !same,
+        note: typeof boardPoint === 'number' && !same ? `Board line is ${boardPoint > 0 ? '+' : ''}${boardPoint} now — keeping ${seg.signed} from the document.` : '',
+        pick: { gameId: g.id, market: 'spread', side: teamSide, ...importBasePick(g),
+          pickLabel: `${team.name} ${seg.signed}`, priceText: same && price ? price : '—', point: seg.point },
+      };
+    }
+    // Team total — not on the board, so it's saved as a manual pick: it will
+    // NOT grade automatically; set its result in Admin → Edit Picks.
+    const sideLabel = seg.side === 'over' ? 'Over' : 'Under';
+    const manualId = `manual-tt-${g.id}-${teamSide}`;
+    return { ok: true, manual: true, note: 'Team total — saved as a manual pick; grade it by hand in Admin.',
+      pick: { gameId: manualId, market: 'team_total', side: seg.side, ...importBasePick(g),
+        pickLabel: `${team.name} TT ${sideLabel} ${seg.point}`, priceText: '—', point: seg.point } };
+  }
+  return { ok: false, note: `Couldn't read "${seg.raw}".` };
+}
+
+// Full pass: document lines -> rows for the preview.
+function importMatchAll(items, games){
+  const rows = [];
+  let ignoredPeople = {};
+  items.forEach(item => {
+    const username = importPersonUsername(item.person);
+    if(!username){
+      const nm = item.person || '(no name)';
+      ignoredPeople[nm] = (ignoredPeople[nm] || 0) + 1;
+      return;
+    }
+    let candidates = [];
+    let parsed = null;
+    let segs;
+    let gameNote = '';
+    let gameOk = true;
+    let chosen = null;
+
+    if(item.hasGame){
+      parsed = importParseGameLine(item.text);
+      if(!parsed){
+        rows.push({ username, line: item.rawLine, ok: false, note: 'Could not read this line.' });
+        return;
+      }
+      segs = importParseSegments(parsed.rest);
+      candidates = importFindGame(parsed, games);
+      if(candidates.length === 0){
+        gameOk = false; gameNote = `No game on the board matches "${parsed.awayAbbr} @ ${parsed.homeAbbr}".`;
+      } else {
+        if(candidates.length > 1 && candidates[0].score - candidates[1].score < 15){
+          gameOk = false; gameNote = `"${parsed.awayAbbr} @ ${parsed.homeAbbr}" matches more than one game.`;
+        } else {
+          chosen = candidates[0];
+          if(chosen.timeOff !== null && chosen.timeOff > 10) gameNote = `Document says a different kickoff time than the board.`;
+        }
+      }
+    } else {
+      segs = importParseSegments(item.text);
+      const teamTok = (segs.find(s => s.team) || {}).team;
+      candidates = teamTok ? importFindGameByTeam(teamTok, games) : [];
+      if(candidates.length === 1) chosen = candidates[0];
+      else { gameOk = false; gameNote = candidates.length === 0 ? `No game on the board for "${teamTok || item.text}".` : `"${teamTok}" is in more than one upcoming game.`; }
+    }
+
+    if(segs.length === 0){
+      rows.push({ username, line: item.rawLine, ok: false, note: 'No pick found on this line.' });
+      return;
+    }
+    segs.forEach(seg => {
+      const base = { username, line: item.rawLine, segment: seg.raw, mortal: !!seg.mortal };
+      if(!gameOk || !chosen){ rows.push({ ...base, ok: false, note: gameNote }); return; }
+      const built = importBuildPick(seg, chosen.g);
+      if(!built.ok){ rows.push({ ...base, ok: false, note: built.note }); return; }
+      rows.push({ ...base, ok: true, warn: !!built.warn || !!gameNote, manual: !!built.manual,
+        note: [built.note, gameNote].filter(Boolean).join(' '), pick: built.pick });
+    });
+  });
+  return { rows, ignoredPeople };
+}
+/*IMPORT_CORE_END*/
+
+/* ---- Import UI (Admin tab) ---- */
+let importRows = [];
+
+function importEsc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function renderImportPreview(rows, ignoredPeople){
+  const box = document.getElementById('importPreview');
+  importRows = rows;
+  const ignoredCount = Object.values(ignoredPeople).reduce((a, b) => a + b, 0);
+  const ignoredNames = Object.keys(ignoredPeople).join(', ');
+
+  if(rows.length === 0){
+    box.innerHTML = `<div class="lb-loading">No picks found for Skell Presidente or Jacky Tables in that document.${ignoredCount ? `<br>Ignored ${ignoredCount} line(s) for: ${importEsc(ignoredNames)}.` : ''}</div>`;
+    return;
+  }
+
+  const byUser = {};
+  rows.forEach((r, i) => { r._i = i; (byUser[r.username] = byUser[r.username] || []).push(r); });
+
+  const sections = Object.entries(byUser).map(([username, list]) => {
+    const body = list.map(r => {
+      const canSave = r.ok;
+      const mortalCell = isBobDiacoUsername(username)
+        ? `<td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-i="${r._i}" data-f="mortal" ${r.mortal ? 'checked' : ''} ${canSave ? '' : 'disabled'}></td>` : '';
+      return `
+        <tr class="${canSave ? (r.warn ? 'import-warn' : '') : 'import-bad'}">
+          <td style="text-align:center;"><input class="admin-checkbox" type="checkbox" data-i="${r._i}" data-f="include" ${canSave ? 'checked' : 'disabled'}></td>
+          <td><div class="admin-pick-game">${importEsc(r.segment || r.line)}</div><div class="admin-pick-meta">${importEsc(r.line)}</div></td>
+          <td>${canSave
+            ? `<div class="admin-pick-game">${importEsc(r.pick.pickLabel)}</div><div class="admin-pick-meta">${importEsc(r.pick.gameSummary)} · ${r.manual ? 'team total (manual)' : importEsc(r.pick.market)} · ${importEsc(r.pick.dateKey || '')}</div>`
+            : `<span class="import-bad-text">Not matched</span>`}
+            ${r.note ? `<div class="admin-pick-meta import-note">${importEsc(r.note)}</div>` : ''}</td>
+          ${mortalCell}
+        </tr>`;
+    }).join('');
+    return `
+      <div class="admin-add-pick-title" style="margin-top:18px;">${importEsc(username)} — ${list.length} line(s)</div>
+      <div class="admin-table-scroll">
+        <table class="admin-editor-table">
+          <thead><tr><th>Add</th><th>From the document</th><th>Will be saved as</th>${isBobDiacoUsername(username) ? '<th>Mortal</th>' : ''}</tr></thead>
+          <tbody>${body}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+
+  box.innerHTML = `
+    ${sections}
+    <div class="admin-add-hint">${ignoredCount ? `Ignored ${ignoredCount} line(s) for people not being imported (${importEsc(ignoredNames)}). ` : ''}Rows marked "Not matched" can't be added — fix those by hand in Edit Picks. Team totals are saved as manual picks and won't grade on their own. Only one Mortal per person per week is kept.</div>
+    <div class="admin-save-bar">
+      <span class="admin-save-status" id="importStatus"></span>
+      <button class="admin-save-btn" id="importConfirmBtn" type="button">Save selected picks</button>
+    </div>`;
+
+  // One Mortal per person per week, live.
+  box.querySelectorAll('[data-f="mortal"]').forEach(cb => {
+    cb.onchange = () => {
+      if(!cb.checked) return;
+      const me = importRows[Number(cb.dataset.i)];
+      const myWeek = weekLabelForPick(me.pick);
+      box.querySelectorAll('[data-f="mortal"]').forEach(other => {
+        const o = importRows[Number(other.dataset.i)];
+        if(other !== cb && o.username === me.username && o.ok && weekLabelForPick(o.pick) === myWeek) other.checked = false;
+      });
+    };
+  });
+  document.getElementById('importConfirmBtn').onclick = confirmImportPicks;
+}
+
+async function confirmImportPicks(){
+  const box = document.getElementById('importPreview');
+  const statusEl = document.getElementById('importStatus');
+  const btn = document.getElementById('importConfirmBtn');
+  const chosen = {};
+  box.querySelectorAll('[data-f="include"]').forEach(cb => {
+    if(!cb.checked) return;
+    const r = importRows[Number(cb.dataset.i)];
+    if(!r || !r.ok) return;
+    const mortalCb = box.querySelector(`[data-f="mortal"][data-i="${cb.dataset.i}"]`);
+    (chosen[r.username] = chosen[r.username] || []).push({ pick: r.pick, mortal: !!(mortalCb && mortalCb.checked) });
+  });
+  const names = Object.keys(chosen);
+  if(names.length === 0){ statusEl.textContent = 'Nothing selected.'; return; }
+
+  btn.disabled = true;
+  statusEl.textContent = 'Saving…';
+  const results = [];
+  try{
+    const { res, body } = await apiFetch('/api/admin/users');
+    if(!res.ok || !body.ok) throw new Error(body.error || `Server responded ${res.status}`);
+    const users = body.users || [];
+
+    for(const username of names){
+      const u = users.find(x => x.username.toLowerCase() === username.toLowerCase());
+      if(!u){ results.push(`${username}: no account with that name — skipped`); continue; }
+
+      // Read the latest saved picks right before writing so nothing newer is overwritten.
+      const cur = await apiFetch(`/api/admin/users/${u.id}/picks`);
+      if(!cur.res.ok || !cur.body.ok) throw new Error(cur.body.error || `Server responded ${cur.res.status}`);
+      const picks = { ...(cur.body.picks || {}) };
+
+      let added = 0, dupes = 0;
+      chosen[username].forEach(({ pick, mortal }) => {
+        const key = `${pick.gameId}::${pick.market}::${pick.side}`;
+        if(picks[key]){ dupes++; return; }
+        const now = Date.now() + added; // keeps savedAt distinct
+        const full = { key, ...pick, savedAt: now, placedAt: now };
+        if(mortal){
+          const wk = weekLabelForPick(full);
+          Object.values(picks).forEach(p => { if(p.mortal && weekLabelForPick(p) === wk) delete p.mortal; });
+          full.mortal = true;
+        }
+        picks[key] = full;
+        added++;
+      });
+
+      if(added > 0){
+        const put = await apiFetch(`/api/admin/users/${u.id}/picks`, { method: 'PUT', body: JSON.stringify({ picks }) });
+        if(!put.res.ok || !put.body.ok) throw new Error(put.body.error || `Server responded ${put.res.status}`);
+      }
+      results.push(`${username}: ${added} added${dupes ? `, ${dupes} already saved (skipped)` : ''}`);
+    }
+    statusEl.textContent = results.join(' · ');
+    box.querySelectorAll('input').forEach(i => i.disabled = true);
+  }catch(err){
+    statusEl.textContent = `Failed: ${err.message}${results.length ? ' (' + results.join(' · ') + ')' : ''}`;
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('importDocxBtn').onclick = async () => {
+  const input = document.getElementById('importDocxFile');
+  const statusEl = document.getElementById('importDocxStatus');
+  const box = document.getElementById('importPreview');
+  if(!input.files || !input.files[0]){ statusEl.textContent = 'Choose a .docx file first.'; return; }
+  statusEl.textContent = 'Reading…';
+  box.innerHTML = '';
+  try{
+    if(typeof DecompressionStream === 'undefined') throw new Error('This browser is too old to read .docx files — try a current Chrome, Safari or Edge.');
+    if(!usingLiveData) throw new Error('The live board isn\'t loaded, so games can\'t be matched. Reload the page and try again.');
+    const buf = await input.files[0].arrayBuffer();
+    const paras = await importReadDocxParagraphs(buf);
+    const games = Object.values(loaded).flat();
+    const { rows, ignoredPeople } = importMatchAll(importParseDocument(paras), games);
+    statusEl.textContent = `${rows.filter(r => r.ok).length} of ${rows.length} pick(s) matched.`;
+    renderImportPreview(rows, ignoredPeople);
+  }catch(err){
+    statusEl.textContent = `Failed: ${err.message}`;
+  }
+};
 
 let savedWeekGroups = {};   // label -> { sortKey, picks: [] }
 let savedActiveWeek = null; // currently selected tab label
